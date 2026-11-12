@@ -26,10 +26,12 @@ import time
 
 import objc
 from AppKit import (
-    NSStatusWindowLevel,
+    NSScreenSaverWindowLevel,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorFullScreenAuxiliary,
+    NSWindowCollectionBehaviorIgnoresCycle,
     NSWindowCollectionBehaviorStationary,
+    NSWindowStyleMaskNonactivatingPanel,
 )
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen
@@ -67,12 +69,18 @@ def show_on_every_desktop(widget):
     """
     view = objc.objc_object(c_void_p=int(widget.winId()))   # the macOS view
     window = view.window()                                   # ...and its window
+    # "Non-activating panel": a helper window that belongs to no particular
+    # app's desktop. macOS needs this to keep it steady over full-screen apps.
+    window.setStyleMask_(window.styleMask() | NSWindowStyleMaskNonactivatingPanel)
     window.setCollectionBehavior_(
         NSWindowCollectionBehaviorCanJoinAllSpaces         # on every desktop
         | NSWindowCollectionBehaviorFullScreenAuxiliary    # over full-screen apps
-        | NSWindowCollectionBehaviorStationary             # stays put in Mission Control
+        | NSWindowCollectionBehaviorStationary             # does not slide away with a desktop
+        | NSWindowCollectionBehaviorIgnoresCycle           # skipped by Cmd+` window switching
     )
-    window.setLevel_(NSStatusWindowLevel)                    # above normal windows and the Dock
+    window.setLevel_(NSScreenSaverWindowLevel)               # above everything, like a screen saver
+    window.setHidesOnDeactivate_(False)                      # stay when another app comes forward
+    window.setCanHide_(False)                                # stay when apps are hidden
 
 
 class ScreenOverlay(QWidget):
