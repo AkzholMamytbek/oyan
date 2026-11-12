@@ -4,10 +4,13 @@ This is the only part of Oyan that talks to the internet.
 
 How it works
 ------------
-Oyan does not talk to the AI service directly. It starts the `claude`
-command-line program (Claude Code) that is already installed and signed in on
-this Mac, hands it the question and the path of the screenshot, and waits for
-the reply. So Oyan itself never sees or stores a password or key.
+By default Oyan does not talk to the AI service directly. It starts the
+`claude` command-line program (Claude Code) that is already installed and
+signed in on this Mac, hands it the question and the path of the screenshot,
+and waits for the reply. So Oyan itself never sees or stores a password or key.
+
+If an API key has been saved (see settings.py), Oyan uses that instead and
+calls the service itself; that code is in ai_direct.py.
 
 The program is started with tight limits:
 * it may only use one tool, "Read", which it needs to open the screenshot;
@@ -24,7 +27,8 @@ Waiting without freezing
 ------------------------
 The reply takes several seconds. We use QProcess, which runs the command in
 the background and sends a signal when it is done, so the buddy keeps moving
-while we wait.
+while we wait. The API-key way does its waiting in a separate "thread" (a
+second line of work running alongside the main one) for the same reason.
 """
 
 import glob
@@ -32,19 +36,22 @@ import json
 import os
 import re
 import shutil
+import threading
 from dataclasses import dataclass
 
 from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
 
+from oyan import settings
+from oyan.ai_direct import AIError, ask_with_key
 from oyan.capture import DATA_FOLDER
 
-AI_MODEL = "sonnet"       # which model to ask; "haiku" is faster, "opus" is smarter
+AI_MODEL = "sonnet"       # for the `claude` command; "haiku" is faster, "opus" is smarter
 TIMEOUT_SECONDS = 90      # give up if there is no reply after this long
 
 SYSTEM_PROMPT = (
     "You are Oyan, a small friendly helper that lives next to the cursor on a Mac. "
     "You are given a screenshot of the screen and a question about it. "
-    "Read the screenshot file, then answer in one or two short plain sentences. "
+    "Look at the screenshot, then answer in one or two short plain sentences. "
     "No markdown, no lists. "
     "End your answer with exactly one tag of the form [POINT:x,y:label], where x,y "
     "are pixel coordinates in the screenshot (origin at the top-left corner) of the "
@@ -104,21 +111,66 @@ class AskAI(QObject):
     answered = pyqtSignal(object)   # carries an Answer
     failed = pyqtSignal(str)        # carries a message to show the owner
 
+    # Used only inside this class: the background thread reports its result
+    # with this signal, and Qt delivers it safely on the main thread.
+    _direct_finished = pyqtSignal(int, str, str)   # request number, reply, error
+
     def __init__(self):
         super().__init__()
         self.process = None
+        self.direct_request = 0      # goes up by one for every API-key request
+        self.direct_waiting = False
+        self._direct_finished.connect(self._on_direct_finished)
         self.timeout = QTimer()
         self.timeout.setSingleShot(True)
         self.timeout.timeout.connect(self._on_timeout)
 
     def is_busy(self):
-        return self.process is not None
+        return self.process is not None or self.direct_waiting
 
     def ask(self, question, screenshot):
+        api_key = settings.get_api_key()
+        if api_key:
+            self._ask_with_key(api_key, question, screenshot)
+        else:
+            self._ask_with_command(question, screenshot)
+
+    # --- Way 1: an API key --------------------------------------------------
+
+    def _ask_with_key(self, api_key, question, screenshot):
+        self.direct_request += 1
+        self.direct_waiting = True
+        request = self.direct_request
+
+        def work():
+            # This function runs in the background thread.
+            try:
+                reply = ask_with_key(api_key, SYSTEM_PROMPT, question, screenshot, TIMEOUT_SECONDS)
+                self._direct_finished.emit(request, reply, "")
+            except AIError as error:
+                self._direct_finished.emit(request, "", str(error))
+            except Exception:
+                self._direct_finished.emit(request, "", "The AI call did not work.")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_direct_finished(self, request, reply, error):
+        if request != self.direct_request or not self.direct_waiting:
+            return   # an old or cancelled request; ignore its result
+        self.direct_waiting = False
+        if error:
+            self.failed.emit(error)
+        else:
+            self.answered.emit(parse_reply(reply))
+
+    # --- Way 2: the `claude` command ----------------------------------------
+
+    def _ask_with_command(self, question, screenshot):
         command = find_command()
         if command is None:
             self.failed.emit(
-                "The `claude` command was not found. Install Claude Code and sign in first."
+                "The `claude` command was not found. Install Claude Code and sign in, "
+                "or save an API key with:  python -m oyan --set-key"
             )
             return
 
@@ -149,6 +201,7 @@ class AskAI(QObject):
 
     def cancel(self):
         """Stop waiting for the current reply (used by Esc)."""
+        self.direct_waiting = False   # a late API-key reply will be ignored
         process = self._forget_process()
         if process is not None:
             process.kill()

@@ -18,7 +18,7 @@ handwriting style.
 
 ## Privacy rules
 
-1. **Everything is local except the call to the AI model.** No other cloud service,
+1. **Everything is local except the call to the AI model (Claude).** No other cloud service,
    no analytics, no remote key proxy.
 2. **Capture only when asked.** A screenshot is taken only when you press the
    hotkey. Oyan never captures in the background.
@@ -43,6 +43,20 @@ python -m oyan                     # start Oyan
 ```
 
 Press `Ctrl+C` in the Terminal window to quit.
+
+### Optional: use an API key instead
+
+If you do not use Claude Code, Oyan can call the Anthropic API with your own
+key. Run this and paste the key when asked (it is not shown as you paste):
+
+```bash
+python -m oyan --set-key       # save a key
+python -m oyan --remove-key    # delete it again
+```
+
+The key is stored only on your Mac, in `~/.oyan/settings.json`, readable by
+your user account alone. It is outside the project folder, so it can never
+end up on GitHub.
 
 ### Permissions
 
