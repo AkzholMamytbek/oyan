@@ -94,8 +94,11 @@ waits.
 
 **5. Pointing and handwriting.** The dot flies along a curved path to the spot
 the answer is about, drops a small marker there, and writes the answer beside
-it, letter by letter, on a little piece of paper. Press Esc to clear it, or
-the hotkey to ask something else.
+it, letter by letter, on a little piece of paper. Press Esc to clear it.
+
+**6. Asking again.** With an answer on screen, press the hotkey and the box
+opens right under it, so you can read the answer while typing the next
+question. A small reminder under the note shows the keys.
 
 ## Credits
 

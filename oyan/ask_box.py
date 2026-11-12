@@ -74,11 +74,15 @@ class AskBox(QWidget):
 
     def open_near(self, cursor_pos):
         """Show the box next to the cursor and start typing into it."""
+        self.open_at(cursor_pos + OFFSET_FROM_CURSOR)
+
+    def open_at(self, top_left):
+        """Show the box with its top-left corner at this position."""
         # Remember the app that is in front right now.
         self._previous_app = app_in_front()
 
         self.input.clear()
-        self.move(self._position_on_screen(cursor_pos))
+        self.move(self._keep_on_screen(top_left))
         self.show()
         show_on_every_desktop(self)   # also over full-screen apps
         self.raise_()
@@ -94,11 +98,10 @@ class AskBox(QWidget):
         bring_to_front(self._previous_app)
         self._previous_app = None
 
-    def _position_on_screen(self, cursor_pos):
-        """Place the box near the cursor, but never off the edge of the screen."""
-        screen = QGuiApplication.screenAt(cursor_pos) or QGuiApplication.primaryScreen()
+    def _keep_on_screen(self, pos):
+        """Nudge the position so the box is never off the edge of the screen."""
+        screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
         area = screen.availableGeometry()   # the screen minus menu bar and Dock
-        pos = cursor_pos + OFFSET_FROM_CURSOR
         x = min(max(pos.x(), area.left() + 8), area.right() - BOX_WIDTH - 8)
         y = min(max(pos.y(), area.top() + 8), area.bottom() - BOX_HEIGHT - 8)
         return QPoint(x, y)

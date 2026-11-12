@@ -12,13 +12,16 @@ This file decides what happens when: hotkey pressed -> open the box,
 question entered -> take a screenshot -> ask the AI model -> show the answer.
 """
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QPoint, QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
 
 from oyan import capture, hotkey
 from oyan.ai import AskAI
-from oyan.ask_box import AskBox, app_in_front, bring_to_front
+from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
+
+
+NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
 
 
 class Oyan:
@@ -61,8 +64,20 @@ class Oyan:
         """The hotkey opens the box; pressing it again closes the box."""
         if self.ask_box.isVisible():
             self.ask_box.close_box()
+            return
+
+        note = self.overlay.note
+        if note is not None and note.visible:
+            # An answer is on screen: open the box right under it, so you can
+            # still read the answer while typing the next question. If there
+            # is no room below, open it above instead.
+            screen = QGuiApplication.screenAt(note.box.center().toPoint()) or QGuiApplication.primaryScreen()
+            x = round(note.box.left())
+            y = round(note.box.bottom()) + NEXT_QUESTION_GAP
+            if y + BOX_HEIGHT > screen.availableGeometry().bottom():
+                y = round(note.box.top()) - NEXT_QUESTION_GAP - BOX_HEIGHT
+            self.ask_box.open_at(QPoint(x, y))
         else:
-            self.overlay.dismiss()   # clear the previous answer, if any
             self.ask_box.open_near(QCursor.pos())
 
     def on_escape(self):
@@ -85,6 +100,8 @@ class Oyan:
             return
 
         self.ai.cancel()   # forget an earlier question that is still waiting
+        self.overlay.thinking = False
+        self.overlay.dismiss()   # remove the old answer so it is not in the new screenshot
         self.question = question
 
         # Hide the buddy so it is not in the picture, and wait a moment so the

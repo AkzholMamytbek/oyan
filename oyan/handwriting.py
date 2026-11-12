@@ -30,6 +30,11 @@ PADDING = 14                 # space between the text and the paper edge
 GAP = 40                     # distance between the pointed-at spot and the note
 SCREEN_MARGIN = 10           # keep the note this far from the screen edges
 
+# A small reminder shown under the note once it is written.
+HINT_TEXT = "Control + Option + Space: ask again    Esc: close"
+HINT_SIZE = 11
+HINT_HEIGHT = 24             # room kept free under the note for the reminder
+
 PAPER = QColor(255, 250, 235, 240)   # warm paper, very slightly see-through
 INK = QColor(60, 40, 20)             # dark brown, like pencil
 
@@ -85,7 +90,7 @@ class Note:
         left_limit = screen_rect.left() + SCREEN_MARGIN
         right_limit = screen_rect.right() - SCREEN_MARGIN - width
         top_limit = screen_rect.top() + SCREEN_MARGIN
-        bottom_limit = screen_rect.bottom() - SCREEN_MARGIN - height
+        bottom_limit = screen_rect.bottom() - SCREEN_MARGIN - height - HINT_HEIGHT
 
         x = self.anchor.x() + GAP
         if x > right_limit:
@@ -96,7 +101,7 @@ class Note:
 
     def bounds(self):
         """A rectangle containing everything the note draws (for repainting)."""
-        return self.box.united(QRectF(self.anchor, self.anchor)).adjusted(-12, -12, 12, 12)
+        return self.box.united(QRectF(self.anchor, self.anchor)).adjusted(-12, -12, 12, 12 + HINT_HEIGHT)
 
     # --- Writing -----------------------------------------------------------
 
@@ -162,3 +167,14 @@ class Note:
                 painter.drawText(QPointF(left, top + self.metrics.ascent()), line)
                 painter.restore()
             letters_before += len(line)
+
+        # Once everything is written, a small reminder of what you can do next.
+        if self.finished():
+            painter.setFont(QFont(".AppleSystemUIFont", HINT_SIZE))
+            hint_width = painter.fontMetrics().horizontalAdvance(HINT_TEXT) + 16
+            hint = QRectF(self.box.left(), self.box.bottom() + 5, hint_width, HINT_HEIGHT - 6)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(40, 30, 20, 190))        # dark, slightly see-through
+            painter.drawRoundedRect(hint, 9, 9)
+            painter.setPen(QColor(255, 250, 235))
+            painter.drawText(hint, Qt.AlignmentFlag.AlignCenter, HINT_TEXT)

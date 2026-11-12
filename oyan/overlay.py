@@ -291,6 +291,7 @@ class OverlayController:
             self._repaint(self.note.bounds())
             if self.note.finished():
                 self.mode = "follow"   # done: the note stays, the buddy goes home
+                self._repaint(self.note.bounds())   # show the reminder under the note
 
         # Repaint the small squares where the buddy was and now is.
         self._repaint(self._buddy_rect(old_pos))
