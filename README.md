@@ -43,6 +43,14 @@ python -m oyan                     # start Oyan
 
 Press `Ctrl+C` in the Terminal window to quit.
 
+### Permissions
+
+macOS asks before a program may listen for a hotkey. The permission goes to
+the app you start Oyan from (Terminal or Visual Studio Code):
+
+- **Accessibility**, for the hotkey: System Settings > Privacy & Security >
+  Accessibility, switch on Terminal (or Visual Studio Code), then restart Oyan.
+
 ## Updates
 
 **1. The overlay.** Oyan is a small orange dot that glides after the cursor.
@@ -50,6 +58,10 @@ It sits in a see-through window on top of everything, and clicks pass straight
 through it.
 
 ![Oyan as an orange dot next to the cursor](docs/oyan-dot.png)
+
+**2. The hotkey and the ask box.** Press **Control + Option + Space** in any
+app and a small text box opens next to the cursor. Enter sends the question,
+Esc closes the box, and you are returned to the app you were in.
 
 ## Credits
 
