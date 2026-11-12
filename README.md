@@ -45,11 +45,14 @@ Press `Ctrl+C` in the Terminal window to quit.
 
 ### Permissions
 
-macOS asks before a program may listen for a hotkey. The permission goes to
-the app you start Oyan from (Terminal or Visual Studio Code):
+macOS asks before a program may listen for a hotkey or look at the screen. The
+permissions go to the app you start Oyan from (Terminal or Visual Studio Code):
 
 - **Accessibility**, for the hotkey: System Settings > Privacy & Security >
   Accessibility, switch on Terminal (or Visual Studio Code), then restart Oyan.
+- **Screen Recording**, for the screenshot: System Settings > Privacy &
+  Security > Screen & System Audio Recording, switch on the same app, then
+  restart Oyan.
 
 ## Updates
 
@@ -62,6 +65,11 @@ through it.
 **2. The hotkey and the ask box.** Press **Control + Option + Space** in any
 app and a small text box opens next to the cursor. Enter sends the question,
 Esc closes the box, and you are returned to the app you were in.
+
+**3. The screenshot.** When you press Enter, and only then, Oyan takes one
+picture of the screen your cursor is on. It is saved on your Mac as
+`~/.oyan/last_screenshot.png` and replaced by the next one. Nothing is sent
+anywhere yet.
 
 ## Credits
 

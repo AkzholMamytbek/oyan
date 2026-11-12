@@ -4,15 +4,16 @@ Each part lives in its own file and knows nothing about the others:
 * overlay.py  - the see-through window and the buddy dot
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
+* capture.py  - the screenshot
 
 This file decides what happens when: hotkey pressed -> open the box,
-question entered -> (next step) take a screenshot, and so on.
+question entered -> take a screenshot -> (next step) ask the AI model.
 """
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QCursor
+from PyQt6.QtGui import QCursor, QGuiApplication
 
-from oyan import hotkey
+from oyan import capture, hotkey
 from oyan.ask_box import AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
 
@@ -25,6 +26,9 @@ class Oyan:
         self.ask_box.submitted.connect(self.on_question)
 
         self.hotkey = hotkey.GlobalHotkey(self.on_hotkey)
+
+        self.question = None     # the question being worked on right now
+        self.screenshot = None   # the latest screenshot
 
     def start(self):
         self.overlay.start()
@@ -54,5 +58,36 @@ class Oyan:
             self.ask_box.open_near(QCursor.pos())
 
     def on_question(self, question):
-        # Next step: take a screenshot here and send both to the AI model.
-        print(f"Question: {question}")
+        """The owner pressed Enter. This is the ONLY place a capture starts."""
+        if not capture.has_permission():
+            capture.request_permission()
+            print(
+                "Oyan needs Screen Recording permission to see your screen.\n"
+                "  1. Open System Settings > Privacy & Security > Screen & System Audio Recording.\n"
+                "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
+                "  3. Quit Oyan with Ctrl+C and start it again."
+            )
+            return
+
+        self.question = question
+
+        # Hide the buddy so it is not in the picture, and wait a moment so the
+        # ask box has really gone and your app is back in front.
+        self.overlay.set_buddy_visible(False)
+        QTimer.singleShot(250, self.take_screenshot)
+
+    def take_screenshot(self):
+        # Capture the monitor the cursor is on.
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        try:
+            self.screenshot = capture.capture_screen(screen)
+        except Exception as error:
+            print(f"Could not take the screenshot: {error}")
+            return
+        finally:
+            self.overlay.set_buddy_visible(True)   # always bring the buddy back
+
+        # Next step: send the question and the screenshot to the AI model.
+        shot = self.screenshot
+        print(f"Question: {self.question}")
+        print(f"Screenshot saved: {shot.path} ({shot.width} x {shot.height} pixels)")

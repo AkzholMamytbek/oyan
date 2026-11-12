@@ -64,6 +64,9 @@ class ScreenOverlay(QWidget):
 
     def paintEvent(self, event):
         """Qt calls this whenever part of the window needs redrawing."""
+        if not self.controller.buddy_visible:
+            return   # hidden while a screenshot is being taken
+
         # The buddy position is global (all monitors). Convert it to a
         # position inside this window by subtracting the window's corner.
         local = self.controller.buddy_pos - QPointF(self.geometry().topLeft())
@@ -87,6 +90,7 @@ class OverlayController:
         self.app = app
         self.overlays = []
         self.buddy_pos = QPointF(QCursor.pos())  # start at the cursor
+        self.buddy_visible = True
         self.start_time = time.monotonic()
 
         self.timer = QTimer()
@@ -109,6 +113,12 @@ class OverlayController:
             overlay = ScreenOverlay(screen, self)
             overlay.show()
             self.overlays.append(overlay)
+
+    def set_buddy_visible(self, visible):
+        """Hide or show the buddy (hidden so it is not in the screenshot)."""
+        self.buddy_visible = visible
+        for overlay in self.overlays:
+            overlay.repaint()   # redraw right now, do not wait for the next tick
 
     def tick(self):
         """Move the buddy a step toward the cursor and repaint."""
