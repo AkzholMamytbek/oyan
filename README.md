@@ -30,7 +30,8 @@ handwriting style.
 
 ## Install and run
 
-You need a Mac and Python 3.10 or newer.
+You need a Mac, Python 3.10 or newer, and
+[Claude Code](https://code.claude.com/docs/en/setup) installed and signed in.
 
 ```bash
 git clone https://github.com/AkzholMamytbek/oyan.git
@@ -70,6 +71,12 @@ Esc closes the box, and you are returned to the app you were in.
 picture of the screen your cursor is on. It is saved on your Mac as
 `~/.oyan/last_screenshot.png` and replaced by the next one. Nothing is sent
 anywhere yet.
+
+**4. Asking the AI.** The question and the screenshot go to the AI model, and
+the answer comes back with a position on the screen. Oyan does this by running
+the `claude` command-line program (Claude Code) that you have installed and
+signed in to, so Oyan itself never handles a password. The dot pulses while it
+waits. For now the answer is printed in the Terminal window.
 
 ## Credits
 

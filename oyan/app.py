@@ -5,15 +5,17 @@ Each part lives in its own file and knows nothing about the others:
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
+* ai.py       - sending the question and screenshot to the AI model
 
 This file decides what happens when: hotkey pressed -> open the box,
-question entered -> take a screenshot -> (next step) ask the AI model.
+question entered -> take a screenshot -> ask the AI model -> show the answer.
 """
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
 
 from oyan import capture, hotkey
+from oyan.ai import AskAI
 from oyan.ask_box import AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
 
@@ -26,6 +28,10 @@ class Oyan:
         self.ask_box.submitted.connect(self.on_question)
 
         self.hotkey = hotkey.GlobalHotkey(self.on_hotkey)
+
+        self.ai = AskAI()
+        self.ai.answered.connect(self.on_answer)
+        self.ai.failed.connect(self.on_ai_failed)
 
         self.question = None     # the question being worked on right now
         self.screenshot = None   # the latest screenshot
@@ -87,7 +93,21 @@ class Oyan:
         finally:
             self.overlay.set_buddy_visible(True)   # always bring the buddy back
 
-        # Next step: send the question and the screenshot to the AI model.
-        shot = self.screenshot
+        # Send the question and the screenshot to the AI model. The buddy
+        # pulses while we wait for the reply.
+        self.overlay.thinking = True
+        self.ai.ask(self.question, self.screenshot)
+
+    def on_answer(self, answer):
+        """The AI replied. `answer` has the text and the point (see ai.py)."""
+        self.overlay.thinking = False
         print(f"Question: {self.question}")
-        print(f"Screenshot saved: {shot.path} ({shot.width} x {shot.height} pixels)")
+        print(f"Answer:   {answer.text}")
+        if answer.point is not None:
+            # Turn the position in the picture into a position on the screen.
+            spot = self.screenshot.to_screen(*answer.point)
+            print(f"Points at: {answer.label} (screen position {spot.x():.0f}, {spot.y():.0f})")
+
+    def on_ai_failed(self, message):
+        self.overlay.thinking = False
+        print(message)

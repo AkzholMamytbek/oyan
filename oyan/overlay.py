@@ -75,7 +75,8 @@ class ScreenOverlay(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(QPen(BUDDY_OUTLINE, 1.5))
         painter.setBrush(BUDDY_COLOR)
-        painter.drawEllipse(local, BUDDY_RADIUS, BUDDY_RADIUS)
+        radius = BUDDY_RADIUS * self.controller.pulse()
+        painter.drawEllipse(local, radius, radius)
 
         # A tiny highlight so the dot looks a bit like a marble.
         painter.setPen(Qt.PenStyle.NoPen)
@@ -91,6 +92,7 @@ class OverlayController:
         self.overlays = []
         self.buddy_pos = QPointF(QCursor.pos())  # start at the cursor
         self.buddy_visible = True
+        self.thinking = False   # True while waiting for the AI: the buddy pulses
         self.start_time = time.monotonic()
 
         self.timer = QTimer()
@@ -120,6 +122,13 @@ class OverlayController:
         for overlay in self.overlays:
             overlay.repaint()   # redraw right now, do not wait for the next tick
 
+    def pulse(self):
+        """Size multiplier for the buddy: 1.0 normally, breathing while thinking."""
+        if not self.thinking:
+            return 1.0
+        seconds = time.monotonic() - self.start_time
+        return 1.0 + 0.3 * math.sin(seconds * 8)
+
     def tick(self):
         """Move the buddy a step toward the cursor and repaint."""
         old_pos = QPointF(self.buddy_pos)
@@ -142,5 +151,5 @@ class OverlayController:
     @staticmethod
     def _dirty_rect(center):
         """A square around the buddy, slightly bigger than the buddy itself."""
-        pad = BUDDY_RADIUS + 4
+        pad = BUDDY_RADIUS + 8   # room for the outline and the pulse
         return QRectF(center.x() - pad, center.y() - pad, pad * 2, pad * 2).toAlignedRect()
