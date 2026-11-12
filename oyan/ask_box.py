@@ -14,6 +14,8 @@ from PyQt6.QtCore import QEvent, QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen
 from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QWidget
 
+from oyan.overlay import show_on_every_desktop
+
 BOX_WIDTH = 360
 BOX_HEIGHT = 44
 OFFSET_FROM_CURSOR = QPoint(18, 34)   # below the cursor and the buddy dot
@@ -78,6 +80,7 @@ class AskBox(QWidget):
         self.input.clear()
         self.move(self._position_on_screen(cursor_pos))
         self.show()
+        show_on_every_desktop(self)   # also over full-screen apps
         self.raise_()
 
         # Become the active app so key presses come to us.

@@ -24,6 +24,13 @@ coordinate space that spans all monitors.
 import math
 import time
 
+import objc
+from AppKit import (
+    NSStatusWindowLevel,
+    NSWindowCollectionBehaviorCanJoinAllSpaces,
+    NSWindowCollectionBehaviorFullScreenAuxiliary,
+    NSWindowCollectionBehaviorStationary,
+)
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
@@ -50,6 +57,24 @@ BUDDY_COLOR = QColor(255, 153, 51)     # warm orange
 BUDDY_OUTLINE = QColor(60, 40, 20)     # dark brown, like pencil
 
 
+def show_on_every_desktop(widget):
+    """Make a window visible on all desktops ("Spaces") and over full-screen apps.
+
+    By default a window belongs to the one desktop it was opened on, so Oyan
+    would vanish when you swipe to another desktop or make an app full screen.
+    Qt has no setting for this, so we ask macOS directly: we get the real
+    macOS window behind the Qt widget and change two of its properties.
+    """
+    view = objc.objc_object(c_void_p=int(widget.winId()))   # the macOS view
+    window = view.window()                                   # ...and its window
+    window.setCollectionBehavior_(
+        NSWindowCollectionBehaviorCanJoinAllSpaces         # on every desktop
+        | NSWindowCollectionBehaviorFullScreenAuxiliary    # over full-screen apps
+        | NSWindowCollectionBehaviorStationary             # stays put in Mission Control
+    )
+    window.setLevel_(NSStatusWindowLevel)                    # above normal windows and the Dock
+
+
 class ScreenOverlay(QWidget):
     """One transparent, click-through window covering one monitor."""
 
@@ -73,6 +98,11 @@ class ScreenOverlay(QWidget):
 
         # Cover the whole monitor.
         self.setGeometry(screen.geometry())
+
+    def showEvent(self, event):
+        """Qt calls this when the window appears."""
+        super().showEvent(event)
+        show_on_every_desktop(self)
 
     def paintEvent(self, event):
         """Qt calls this whenever part of the window needs redrawing."""
