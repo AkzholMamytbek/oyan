@@ -1,0 +1,2 @@
+# Packages Oyan needs. Install with:  pip install -r requirements.txt
+PyQt6>=6.7

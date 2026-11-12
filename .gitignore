@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Secrets
+.env
+*.key
+settings.local.json
+
+# Private data Oyan creates: screenshots, logs, history
+data/
+logs/
+history/
+screenshots/
+*.log
+
+# Editor
+.vscode/
