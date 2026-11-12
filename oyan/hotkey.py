@@ -30,6 +30,7 @@ from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOp
 HOTKEY_KEY_CODE = 49  # macOS's number for the Space bar
 HOTKEY_MODIFIERS = NSEventModifierFlagControl | NSEventModifierFlagOption
 HOTKEY_NAME = "Control + Option + Space"
+ESCAPE_KEY_CODE = 53  # macOS's number for the Esc key
 
 # When comparing, look only at these four modifier keys (ignore Caps Lock etc.).
 ALL_MODIFIERS = (
@@ -50,10 +51,15 @@ def has_permission(ask=False):
 
 
 class GlobalHotkey:
-    """Calls `on_pressed()` every time the hotkey is pressed, in any app."""
+    """Calls `on_pressed()` every time the hotkey is pressed, in any app.
 
-    def __init__(self, on_pressed):
+    Also calls `on_escape()` when Esc is pressed while another app is in
+    front. We only listen: the other app still receives its Esc as usual.
+    """
+
+    def __init__(self, on_pressed, on_escape):
         self.on_pressed = on_pressed
+        self.on_escape = on_escape
         self._monitors = []
 
     def start(self):
@@ -79,6 +85,8 @@ class GlobalHotkey:
     def _on_global_key(self, event):
         if self._is_hotkey(event) and not event.isARepeat():
             self.on_pressed()
+        elif event.keyCode() == ESCAPE_KEY_CODE:
+            self.on_escape()
 
     def _on_local_key(self, event):
         # A local monitor must hand the event back so the app still receives

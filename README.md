@@ -5,8 +5,8 @@ You ask a question about what is on your screen; Oyan looks at a screenshot,
 glides to the relevant spot, and writes the answer right there in a
 handwriting style.
 
-> **Status: early work in progress.** See [Updates](#updates) for what works
-> so far.
+> **Status: version 1 is being tested.** See [Updates](#updates) for what
+> works so far.
 
 ## What makes Oyan different
 
@@ -76,7 +76,12 @@ anywhere yet.
 the answer comes back with a position on the screen. Oyan does this by running
 the `claude` command-line program (Claude Code) that you have installed and
 signed in to, so Oyan itself never handles a password. The dot pulses while it
-waits. For now the answer is printed in the Terminal window.
+waits.
+
+**5. Pointing and handwriting.** The dot flies along a curved path to the spot
+the answer is about, drops a small marker there, and writes the answer beside
+it, letter by letter, on a little piece of paper. Press Esc to clear it, or
+the hotkey to ask something else.
 
 ## Credits
 

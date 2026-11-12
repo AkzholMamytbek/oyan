@@ -2,6 +2,7 @@
 
 Each part lives in its own file and knows nothing about the others:
 * overlay.py  - the see-through window and the buddy dot
+* handwriting.py - the written answer
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -27,7 +28,7 @@ class Oyan:
         self.ask_box = AskBox()
         self.ask_box.submitted.connect(self.on_question)
 
-        self.hotkey = hotkey.GlobalHotkey(self.on_hotkey)
+        self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape)
 
         self.ai = AskAI()
         self.ai.answered.connect(self.on_answer)
@@ -61,7 +62,15 @@ class Oyan:
         if self.ask_box.isVisible():
             self.ask_box.close_box()
         else:
+            self.overlay.dismiss()   # clear the previous answer, if any
             self.ask_box.open_near(QCursor.pos())
+
+    def on_escape(self):
+        """Esc: stop waiting for the AI and remove the answer from the screen."""
+        if self.ai.is_busy():
+            self.ai.cancel()
+            self.overlay.thinking = False
+        self.overlay.dismiss()
 
     def on_question(self, question):
         """The owner pressed Enter. This is the ONLY place a capture starts."""
@@ -75,6 +84,7 @@ class Oyan:
             )
             return
 
+        self.ai.cancel()   # forget an earlier question that is still waiting
         self.question = question
 
         # Hide the buddy so it is not in the picture, and wait a moment so the
@@ -101,13 +111,13 @@ class Oyan:
     def on_answer(self, answer):
         """The AI replied. `answer` has the text and the point (see ai.py)."""
         self.overlay.thinking = False
-        print(f"Question: {self.question}")
-        print(f"Answer:   {answer.text}")
+        spot = None
         if answer.point is not None:
             # Turn the position in the picture into a position on the screen.
             spot = self.screenshot.to_screen(*answer.point)
-            print(f"Points at: {answer.label} (screen position {spot.x():.0f}, {spot.y():.0f})")
+        self.overlay.show_answer(answer.text, spot)
 
     def on_ai_failed(self, message):
         self.overlay.thinking = False
         print(message)
+        self.overlay.show_answer("Sorry, that did not work. See the Terminal window.", None)
