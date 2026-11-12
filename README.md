@@ -5,8 +5,8 @@ You ask a question about what is on your screen; Oyan looks at a screenshot,
 glides to the relevant spot, and writes the answer right there in a
 handwriting style.
 
-> **Status: early work in progress.** Right now Oyan is only a small dot that
-> follows the cursor. See the roadmap below for what is coming.
+> **Status: early work in progress.** See [Updates](#updates) for what works
+> so far.
 
 ## What makes Oyan different
 
@@ -43,31 +43,13 @@ python -m oyan                     # start Oyan
 
 Press `Ctrl+C` in the Terminal window to quit.
 
-## Roadmap
+## Updates
 
-**Version 1: the core loop**
-- [x] Overlay window that follows the cursor
-- [ ] Global hotkey opens a small text box near the cursor
-- [ ] Take a screenshot when a question is asked
-- [ ] Send screenshot and question to the AI model
-- [ ] Glide to the spot the AI points at and write the answer beside it
-- [ ] Esc dismisses
+**1. The overlay.** Oyan is a small orange dot that glides after the cursor.
+It sits in a see-through window on top of everything, and clicks pass straight
+through it.
 
-**Version 2: drawing and privacy**
-- [ ] Circles, underlines and arrows
-- [ ] Idle sketches
-- [ ] Region select: only the part of the screen you drag over is sent
-- [ ] "What left my Mac" log of every screenshot and question sent
-
-**Version 3: smarter help**
-- [ ] Step-by-step mode
-- [ ] Follow-up questions on the same screenshot
-- [ ] Local, searchable history
-- [ ] Blocked apps (password managers, banking) with an editable list
-
-**Version 4: voice, all local**
-- [ ] Speech to text with a local Whisper model
-- [ ] Spoken answers with the built-in macOS voice or a local voice model
+![Oyan as an orange dot next to the cursor](docs/oyan-dot.png)
 
 ## Credits
 
