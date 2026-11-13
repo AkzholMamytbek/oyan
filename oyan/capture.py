@@ -32,7 +32,7 @@ from Quartz import CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess
 
 # Oyan keeps its private files in a folder called ".oyan" in your home folder.
 DATA_FOLDER = Path.home() / ".oyan"
-SCREENSHOT_PATH = DATA_FOLDER / "last_screenshot.png"   # overwritten every time
+SCREENSHOT_PATH = DATA_FOLDER / "last_screenshot.png"   # deleted as soon as it is sent
 
 MAX_IMAGE_SIDE = 1280
 
@@ -65,9 +65,15 @@ def request_permission():
     CGRequestScreenCaptureAccess()
 
 
+def delete_screenshot():
+    """Remove the picture from disk; it has been handed to the AI call."""
+    SCREENSHOT_PATH.unlink(missing_ok=True)
+
+
 def capture_screen(screen):
     """Take a picture of one monitor and save it. Returns a Screenshot."""
     DATA_FOLDER.mkdir(exist_ok=True)
+    DATA_FOLDER.chmod(0o700)   # 700 = only your Mac user account may open the folder
     rect = screen.geometry()   # this monitor's rectangle, in points
 
     # -x: no camera sound.  -R: capture only this rectangle.

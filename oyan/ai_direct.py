@@ -4,11 +4,9 @@ This is only used when an API key has been saved (see settings.py). People
 who have Claude Code installed do not need it; see ai.py for that way.
 
 We use `anthropic`, the official Python package. The screenshot is sent
-inside the request itself, turned into text with "base64" (a standard way of
-writing a file's bytes as letters and digits).
+inside the request itself, already turned into text with "base64" by ai.py.
+No tools are given to the model here either: it can only answer.
 """
-
-import base64
 
 import anthropic
 
@@ -21,9 +19,8 @@ class AIError(Exception):
     """Something went wrong; the message is safe to show to the owner."""
 
 
-def ask_with_key(api_key, system_prompt, question, screenshot, timeout_seconds):
-    """Send the question and screenshot. Returns the AI's reply as text."""
-    image_data = base64.standard_b64encode(screenshot.path.read_bytes()).decode("utf-8")
+def ask_with_key(api_key, system_prompt, image_data, text, timeout_seconds):
+    """Send the picture (as base64 text) and the question. Returns the reply."""
     client = anthropic.Anthropic(api_key=api_key, timeout=timeout_seconds)
 
     try:
@@ -43,13 +40,7 @@ def ask_with_key(api_key, system_prompt, question, screenshot, timeout_seconds):
                         "type": "image",
                         "source": {"type": "base64", "media_type": "image/png", "data": image_data},
                     },
-                    {
-                        "type": "text",
-                        "text": (
-                            f"The screenshot is {screenshot.width} x {screenshot.height} pixels.\n"
-                            f"Question: {question}"
-                        ),
-                    },
+                    {"type": "text", "text": text},
                 ],
             }],
         )

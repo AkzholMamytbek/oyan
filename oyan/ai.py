@@ -6,16 +6,24 @@ How it works
 ------------
 By default Oyan does not talk to the AI service directly. It starts the
 `claude` command-line program (Claude Code) that is already installed and
-signed in on this Mac, hands it the question and the path of the screenshot,
-and waits for the reply. So Oyan itself never sees or stores a password or key.
+signed in on this Mac, hands it the question and the screenshot, and waits
+for the reply. So Oyan itself never sees or stores a password or key.
 
 If an API key has been saved (see settings.py), Oyan uses that instead and
 calls the service itself; that code is in ai_direct.py.
 
 The program is started with tight limits:
-* it may only use one tool, "Read", which it needs to open the screenshot;
+* it has NO tools: it cannot read files, run commands or browse. This
+  matters because text inside a screenshot (a web page, an email) could try
+  to trick the AI into doing something; with no tools there is nothing it
+  can do except answer;
+* it ignores your personal Claude Code settings, add-ons and hooks;
 * it runs inside Oyan's own folder (~/.oyan), not in your projects;
 * it does not save the conversation to disk.
+
+The question and the picture are handed over through the program's "standard
+input" (the same channel a keyboard would use), not written on its command
+line, so other programs on the Mac cannot see them in the process list.
 
 Pointing
 --------
@@ -31,6 +39,7 @@ while we wait. The API-key way does its waiting in a separate "thread" (a
 second line of work running alongside the main one) for the same reason.
 """
 
+import base64
 import glob
 import json
 import os
@@ -129,15 +138,24 @@ class AskAI(QObject):
         return self.process is not None or self.direct_waiting
 
     def ask(self, question, screenshot):
+        """Send the question and screenshot. The picture file is read here,
+        straight away, so the caller may delete it as soon as this returns."""
+        # base64 writes the picture's bytes as plain letters and digits, which
+        # is how pictures travel inside a text message to the AI.
+        image_data = base64.standard_b64encode(screenshot.path.read_bytes()).decode("utf-8")
+        text = (
+            f"The screenshot is {screenshot.width} x {screenshot.height} pixels.\n"
+            f"Question: {question}"
+        )
         api_key = settings.get_api_key()
         if api_key:
-            self._ask_with_key(api_key, question, screenshot)
+            self._ask_with_key(api_key, image_data, text)
         else:
-            self._ask_with_command(question, screenshot)
+            self._ask_with_command(image_data, text)
 
     # --- Way 1: an API key --------------------------------------------------
 
-    def _ask_with_key(self, api_key, question, screenshot):
+    def _ask_with_key(self, api_key, image_data, text):
         self.direct_request += 1
         self.direct_waiting = True
         request = self.direct_request
@@ -145,7 +163,7 @@ class AskAI(QObject):
         def work():
             # This function runs in the background thread.
             try:
-                reply = ask_with_key(api_key, SYSTEM_PROMPT, question, screenshot, TIMEOUT_SECONDS)
+                reply = ask_with_key(api_key, SYSTEM_PROMPT, image_data, text, TIMEOUT_SECONDS)
                 self._direct_finished.emit(request, reply, "")
             except AIError as error:
                 self._direct_finished.emit(request, "", str(error))
@@ -165,7 +183,7 @@ class AskAI(QObject):
 
     # --- Way 2: the `claude` command ----------------------------------------
 
-    def _ask_with_command(self, question, screenshot):
+    def _ask_with_command(self, image_data, text):
         command = find_command()
         if command is None:
             self.failed.emit(
@@ -174,29 +192,42 @@ class AskAI(QObject):
             )
             return
 
-        prompt = (
-            f"Screenshot: {screenshot.path} "
-            f"({screenshot.width} x {screenshot.height} pixels).\n"
-            f"Question: {question}"
-        )
+        # The message, in the format the program expects: a picture and a text.
+        message = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": image_data},
+                    },
+                    {"type": "text", "text": text},
+                ],
+            },
+        }
         arguments = [
-            "-p", prompt,                     # answer once and exit
-            "--output-format", "json",        # reply as JSON we can parse
+            "-p",                               # answer once and exit
+            "--input-format", "stream-json",    # we send the message as JSON...
+            "--output-format", "stream-json",   # ...and get JSON lines back
+            "--verbose",                        # (required with stream-json output)
             "--model", AI_MODEL,
             "--system-prompt", SYSTEM_PROMPT,
-            "--tools", "Read",                # the only tool that exists for it
-            "--allowedTools", "Read",         # ...and it may use it without asking
-            "--strict-mcp-config",            # do not load any add-on servers
-            "--disable-slash-commands",       # do not load skills or commands
-            "--no-session-persistence",       # do not save the conversation
+            "--tools", "",                      # no tools at all
+            "--restricted",                     # ignore personal settings and hooks
+            "--strict-mcp-config",              # do not load any add-on servers
+            "--disable-slash-commands",         # do not load skills or commands
+            "--no-session-persistence",         # do not save the conversation
         ]
 
         self.process = QProcess()
         self.process.setWorkingDirectory(str(DATA_FOLDER))
-        self.process.setStandardInputFile(QProcess.nullDevice())   # nothing to type in
         self.process.finished.connect(self._on_finished)
         self.process.errorOccurred.connect(self._on_error)
         self.process.start(command, arguments)
+        # Hand over the message, then close the channel to say "that is all".
+        self.process.write((json.dumps(message) + "\n").encode("utf-8"))
+        self.process.closeWriteChannel()
         self.timeout.start(TIMEOUT_SECONDS * 1000)
 
     def cancel(self):
@@ -221,14 +252,17 @@ class AskAI(QObject):
         process = self._forget_process()
         output = bytes(process.readAllStandardOutput()).decode("utf-8", "replace")
         try:
-            data = json.loads(output)
+            # The output is several lines of JSON; the one we want has
+            # "type": "result" and carries the final answer.
+            results = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+            data = next(item for item in results if item.get("type") == "result")
             reply = data["result"]
             if data.get("is_error"):
                 raise ValueError(reply)
         except Exception:
             # Show whatever the command said, shortened, to help find the problem.
             errors = bytes(process.readAllStandardError()).decode("utf-8", "replace")
-            detail = (output or errors).strip()[:300]
+            detail = (errors or output).strip()[-300:]
             self.failed.emit(f"The AI call did not work: {detail}")
             return
         self.answered.emit(parse_reply(reply))

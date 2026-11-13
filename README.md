@@ -82,15 +82,15 @@ app and a small text box opens next to the cursor. Enter sends the question,
 Esc closes the box, and you are returned to the app you were in.
 
 **3. The screenshot.** When you press Enter, and only then, Oyan takes one
-picture of the screen your cursor is on. It is saved on your Mac as
-`~/.oyan/last_screenshot.png` and replaced by the next one. Nothing is sent
-anywhere yet.
+picture of the screen your cursor is on. The picture file is deleted from
+your Mac as soon as it has been handed to the AI call.
 
 **4. Asking the AI.** The question and the screenshot go to the AI model, and
 the answer comes back with a position on the screen. Oyan does this by running
 the `claude` command-line program (Claude Code) that you have installed and
 signed in to, so Oyan itself never handles a password. The dot pulses while it
-waits.
+waits. The AI is given no tools: it cannot read files, run commands or browse,
+so text hidden in a screenshot cannot trick it into doing anything but answer.
 
 **5. Pointing and handwriting.** The dot flies along a curved path to the spot
 the answer is about, drops a small marker there, and writes the answer beside

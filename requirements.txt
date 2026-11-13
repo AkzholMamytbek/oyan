@@ -1,6 +1,8 @@
 # Packages Oyan needs. Install with:  pip install -r requirements.txt
-PyQt6>=6.7                               # windows and drawing
-pyobjc-framework-Cocoa>=10               # talk to macOS (hotkey, app focus)
-pyobjc-framework-Quartz>=10              # screen capture permission check
-pyobjc-framework-ApplicationServices>=10 # Accessibility permission check
-anthropic>=2.0                           # only used with the optional API key
+# Exact versions are pinned on purpose: a surprise new release (possibly a
+# bad one) is never installed automatically. Update them deliberately.
+PyQt6==6.12.0                                # windows and drawing
+pyobjc-framework-Cocoa==13.0                 # talk to macOS (hotkey, app focus)
+pyobjc-framework-Quartz==13.0                # screen capture permission check
+pyobjc-framework-ApplicationServices==13.0   # Accessibility permission check
+anthropic==2.8.0                             # only used with the optional API key

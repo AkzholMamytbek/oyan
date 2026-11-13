@@ -123,7 +123,12 @@ class Oyan:
         # Send the question and the screenshot to the AI model. The buddy
         # pulses while we wait for the reply.
         self.overlay.thinking = True
-        self.ai.ask(self.question, self.screenshot)
+        try:
+            self.ai.ask(self.question, self.screenshot)
+        finally:
+            # The picture has been read into memory for sending; do not leave
+            # a copy of your screen lying on the disk.
+            capture.delete_screenshot()
 
     def on_answer(self, answer):
         """The AI replied. `answer` has the text and the point (see ai.py)."""
