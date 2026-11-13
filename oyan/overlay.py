@@ -13,6 +13,13 @@ What the buddy is doing (its "mode")
 * "glide"  - flying along a curved path to a spot (to point, or to start writing).
 * "pause"  - sitting still on the spot for a moment, so you notice it.
 * "write"  - riding along the answer as it is written (see handwriting.py).
+* "wipe"   - scrubbing across an answer like a board eraser, removing it.
+
+The board
+---------
+Answers stay on screen like writing on a school board (`self.notes`) until
+they are wiped. While a screenshot is taken they are hidden for a moment, so
+old answers are never in the picture that is sent.
 
 Coordinates
 -----------
@@ -54,12 +61,13 @@ GLIDE_MAX_SECONDS = 1.2     # ...or slower than this
 GLIDE_CURVE = 0.25          # how much the path bends (0 = straight line)
 POINT_PAUSE_SECONDS = 0.35  # how long it rests on the spot before writing
 WRITE_SPEED = 38            # letters per second
+WIPE_SECONDS = 0.55         # how long the eraser takes to wipe one answer
 
 BUDDY_COLOR = QColor(255, 153, 51)     # warm orange
 BUDDY_OUTLINE = QColor(60, 40, 20)     # dark brown, like pencil
 
 
-def show_on_every_desktop(widget):
+def show_on_every_desktop(widget, takes_keyboard=False):
     """Make a window visible on all desktops ("Spaces") and over full-screen apps.
 
     By default a window belongs to the one desktop it was opened on, so Oyan
@@ -71,7 +79,10 @@ def show_on_every_desktop(widget):
     window = view.window()                                   # ...and its window
     # "Non-activating panel": a helper window that belongs to no particular
     # app's desktop. macOS needs this to keep it steady over full-screen apps.
-    window.setStyleMask_(window.styleMask() | NSWindowStyleMaskNonactivatingPanel)
+    # A window you type into (the ask box) must NOT have it, or a click in
+    # the window would not give it the keyboard.
+    if not takes_keyboard:
+        window.setStyleMask_(window.styleMask() | NSWindowStyleMaskNonactivatingPanel)
     window.setCollectionBehavior_(
         NSWindowCollectionBehaviorCanJoinAllSpaces         # on every desktop
         | NSWindowCollectionBehaviorFullScreenAuxiliary    # over full-screen apps
@@ -123,8 +134,9 @@ class ScreenOverlay(QWidget):
         # this window.
         painter.translate(-QPointF(self.geometry().topLeft()))
 
-        if controller.note is not None:
-            controller.note.paint(painter)
+        if controller.notes_visible:
+            for note in controller.notes:
+                note.paint(painter)
 
         if not controller.buddy_visible:
             return   # hidden while a screenshot is being taken
@@ -154,7 +166,10 @@ class OverlayController:
         self.last_tick = self.start_time
 
         self.mode = "follow"
-        self.note = None          # the answer on screen, if any
+        self.notes = []           # every answer on the board, oldest first
+        self.notes_visible = True # False for a moment while a screenshot is taken
+        self.writing = None       # the note being written right now, if any
+        self.on_note_finished = None   # a function to call when writing ends
         self.glide = None         # details of the current flight (see _start_glide)
         self.pause_until = 0.0
 
@@ -185,6 +200,16 @@ class OverlayController:
         for overlay in self.overlays:
             overlay.repaint()   # redraw right now, do not wait for the next tick
 
+    def set_board_visible(self, visible):
+        """Hide or show the buddy AND the answers (hidden during a screenshot)."""
+        self.notes_visible = visible
+        self.set_buddy_visible(visible)
+
+    @property
+    def note(self):
+        """The newest answer on the board, or None if the board is empty."""
+        return self.notes[-1] if self.notes else None
+
     def pulse(self):
         """Size multiplier for the buddy: 1.0 normally, breathing while thinking."""
         if not self.thinking:
@@ -200,10 +225,21 @@ class OverlayController:
         `spot` is a global screen position (QPointF), or None if the AI did
         not point at anything; then the note is written near the buddy.
         """
-        self.dismiss()
+        # An unfinished wipe or older reminders should not linger.
+        for old in self.notes:
+            old.wipe = 0.0
+            old.show_hint = False
+            self._repaint(old.bounds())
+
         anchor = spot if spot is not None else self.buddy_pos
         screen = QGuiApplication.screenAt(anchor.toPoint()) or QGuiApplication.primaryScreen()
-        self.note = Note(text, anchor, screen.geometry(), has_point=spot is not None)
+        new_note = Note(
+            text, anchor, screen.geometry(),
+            has_point=spot is not None,
+            avoid=[old.bounds() for old in self.notes],
+        )
+        self.notes.append(new_note)
+        self.writing = new_note
 
         if spot is not None:
             self._start_glide(spot, then=self._arrived_at_spot)
@@ -211,16 +247,32 @@ class OverlayController:
             self._arrived_at_spot()
 
     def dismiss(self):
-        """Remove the answer and go back to following the cursor."""
-        if self.note is not None:
-            self._repaint(self.note.bounds())
-        self.note = None
+        """Remove every answer at once, with no animation."""
+        for old in self.notes:
+            self._repaint(old.bounds())
+        self.notes = []
+        self.writing = None
         self.mode = "follow"
+
+    def wipe_board(self):
+        """Wipe the answers away one by one, like cleaning a school board."""
+        self.writing = None
+        self._wipe_next()
+
+    def _wipe_next(self):
+        if not self.notes:
+            self.mode = "follow"   # the board is clean
+            return
+        # Fly to the left edge of the oldest note, then start scrubbing.
+        self._start_glide(self.notes[0].eraser_position(), then=self._start_wiping)
+
+    def _start_wiping(self):
+        self.mode = "wipe"
 
     def _arrived_at_spot(self):
         """The buddy is on the spot: show the paper, rest a moment."""
-        self.note.visible = True
-        self._repaint(self.note.bounds())
+        self.writing.visible = True
+        self._repaint(self.writing.bounds())
         self.mode = "pause"
         self.pause_until = time.monotonic() + POINT_PAUSE_SECONDS
 
@@ -283,15 +335,27 @@ class OverlayController:
         elif self.mode == "pause":
             if now >= self.pause_until:
                 # Hop from the spot to where the first letter goes, then write.
-                self._start_glide(self.note.pen_position(), then=self._start_writing)
+                self._start_glide(self.writing.pen_position(), then=self._start_writing)
 
         elif self.mode == "write":
-            self.note.progress += WRITE_SPEED * seconds_passed
-            self.buddy_pos = self.note.pen_position()
-            self._repaint(self.note.bounds())
-            if self.note.finished():
+            note = self.writing
+            note.progress += WRITE_SPEED * seconds_passed
+            self.buddy_pos = note.pen_position()
+            self._repaint(note.bounds())
+            if note.finished():
                 self.mode = "follow"   # done: the note stays, the buddy goes home
-                self._repaint(self.note.bounds())   # show the reminder under the note
+                self.writing = None
+                if self.on_note_finished is not None:
+                    self.on_note_finished(note)
+
+        elif self.mode == "wipe":
+            note = self.notes[0]
+            note.wipe += seconds_passed / WIPE_SECONDS
+            self.buddy_pos = note.eraser_position()
+            self._repaint(note.bounds())
+            if note.wipe >= 1:
+                self.notes.pop(0)    # this one is gone
+                self._wipe_next()    # on to the next, if any
 
         # Repaint the small squares where the buddy was and now is.
         self._repaint(self._buddy_rect(old_pos))

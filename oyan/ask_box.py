@@ -1,7 +1,11 @@
-"""The ask box: a small text field that appears next to the cursor.
+"""The ask box: a small text field for typing a question.
 
-Enter sends the question, Esc closes the box. Clicking anywhere outside the
-box closes it too.
+It appears in two ways:
+* next to the cursor when you press the hotkey. Enter sends the question,
+  Esc closes the box, and clicking anywhere outside closes it too;
+* "attached" under a finished answer, waiting quietly. It does not take the
+  keyboard until you click in it (or press the hotkey), and it stays there
+  until the board is wiped.
 
 The tricky part is keyboard focus. To type into the box, Oyan has to become
 the "active" app for a moment. Before it does, we remember which app was in
@@ -9,8 +13,9 @@ front, and when the box closes we put that app back in front. That way you
 carry on exactly where you were.
 """
 
+import objc
 from AppKit import NSApp, NSApplicationActivateIgnoringOtherApps, NSWorkspace
-from PyQt6.QtCore import QEvent, QPoint, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen
 from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QWidget
 
@@ -44,10 +49,12 @@ class AskBox(QWidget):
     # happened. Other code "connects" a function to them.
     submitted = pyqtSignal(str)   # the owner pressed Enter; carries the question
     cancelled = pyqtSignal()      # the owner pressed Esc or clicked away
+    escaped = pyqtSignal()        # the owner pressed Esc while typing in the box
 
     def __init__(self):
         super().__init__()
         self._previous_app = None
+        self.attached = False     # True while the box sits under an answer
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -56,6 +63,9 @@ class AskBox(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
+        # Showing the window must not grab the keyboard by itself. When we do
+        # want the keyboard (open_at), we ask for it explicitly.
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedSize(BOX_WIDTH, BOX_HEIGHT)
 
         self.input = QLineEdit()
@@ -65,6 +75,8 @@ class AskBox(QWidget):
             f"background: transparent; color: {INK.name()}; font-size: 15px;"
         )
         self.input.returnPressed.connect(self._submit)
+        # Let us hear about mouse clicks on the text field (see eventFilter).
+        self.input.installEventFilter(self)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 0, 14, 0)
@@ -77,25 +89,64 @@ class AskBox(QWidget):
         self.open_at(cursor_pos + OFFSET_FROM_CURSOR)
 
     def open_at(self, top_left):
-        """Show the box with its top-left corner at this position."""
+        """Show the box with its top-left corner here and start typing into it."""
         # Remember the app that is in front right now.
         self._previous_app = app_in_front()
 
         self.input.clear()
         self.move(self._keep_on_screen(top_left))
         self.show()
-        show_on_every_desktop(self)   # also over full-screen apps
-        self.raise_()
+        show_on_every_desktop(self, takes_keyboard=True)   # also over full-screen apps
+        self._take_keyboard()
 
-        # Become the active app so key presses come to us.
-        NSApp.activateIgnoringOtherApps_(True)
+    def _take_keyboard(self):
+        """Make key presses come to this box."""
+        if not self.isVisible():
+            return   # the box was closed in the meantime
+        window = self._mac_window()
+        # By default a helper panel avoids taking the keyboard; tell it not to.
+        window.setBecomesKeyOnlyIfNeeded_(False)
+        self.raise_()
+        NSApp.activateIgnoringOtherApps_(True)   # Oyan becomes the active app
         self.activateWindow()
+        window.makeKeyAndOrderFront_(None)       # ...and this its typing window
         self.input.setFocus()
+
+    def _mac_window(self):
+        """The real macOS window behind this Qt widget."""
+        return objc.objc_object(c_void_p=int(self.winId())).window()
+
+    def show_attached(self, top_left):
+        """Show the box under an answer WITHOUT taking the keyboard.
+
+        You keep working in your app. The box waits; click in it to type.
+        """
+        self.attached = True
+        self.input.clear()
+        self.move(self._keep_on_screen(top_left))
+        self.show()
+        show_on_every_desktop(self, takes_keyboard=True)
+        # (No raise_() here: on macOS that would pull Oyan in front of your
+        # app and take the keyboard away from you.)
+
+    def is_typing(self):
+        """Is the keyboard going into this box right now?
+
+        We ask macOS whether our window is the "key window" (the one that
+        receives key presses). Qt's own isActiveWindow() is not reliable for
+        a window that was shown without being activated.
+        """
+        if not self.isVisible():
+            return False
+        return bool(self._mac_window().isKeyWindow())
 
     def close_box(self):
         """Hide the box and give the keyboard back to the previous app."""
+        was_typing = self.is_typing()
+        self.attached = False
         self.hide()
-        bring_to_front(self._previous_app)
+        if was_typing:
+            bring_to_front(self._previous_app)
         self._previous_app = None
 
     def _keep_on_screen(self, pos):
@@ -115,25 +166,43 @@ class AskBox(QWidget):
         self.close_box()
         self.submitted.emit(question)
 
-    def _cancel(self):
-        if self.isVisible():
-            self.close_box()
-            self.cancelled.emit()
-
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
-            self._cancel()
+            self.close_box()
+            self.escaped.emit()
         else:
             super().keyPressEvent(event)
 
+    def _clicked(self):
+        """You clicked in the box while it was only waiting: start typing."""
+        # Remember where you came from, so the keyboard can go back there.
+        if self._previous_app is None:
+            self._previous_app = app_in_front()
+        if not self.is_typing():
+            # Wait until macOS has finished handling the click itself, then
+            # take the keyboard; doing it in the middle of the click fails.
+            QTimer.singleShot(50, self._take_keyboard)
+
+    def mousePressEvent(self, event):
+        self._clicked()
+        super().mousePressEvent(event)
+
+    def eventFilter(self, watched, event):
+        # Qt calls this for events of the text field, before the field
+        # handles them. Returning False means "carry on as normal".
+        if watched is self.input and event.type() == QEvent.Type.MouseButtonPress:
+            self._clicked()
+        return False
+
     def changeEvent(self, event):
-        # If the owner clicks on another window, the box is no longer the
-        # active window. Treat that like Esc.
-        if event.type() == QEvent.Type.ActivationChange and not self.isActiveWindow():
-            if self.isVisible():
-                self.hide()
-                self._previous_app = None   # they chose where to go; don't jump back
-                self.cancelled.emit()
+        # If you click on another window, a box opened at the cursor closes
+        # itself. A box attached under an answer stays where it is.
+        if event.type() == QEvent.Type.ActivationChange and self.isVisible():
+            if not self.isActiveWindow():
+                self._previous_app = None   # you chose where to go; do not jump back
+                if not self.attached:
+                    self.hide()
+                    self.cancelled.emit()
         super().changeEvent(event)
 
     # --- Drawing -----------------------------------------------------------

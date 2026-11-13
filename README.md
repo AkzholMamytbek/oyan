@@ -94,11 +94,14 @@ so text hidden in a screenshot cannot trick it into doing anything but answer.
 
 **5. Pointing and handwriting.** The dot flies along a curved path to the spot
 the answer is about, drops a small marker there, and writes the answer beside
-it, letter by letter, on a little piece of paper. Press Esc to clear it.
+it, letter by letter, on a little piece of paper.
 
-**6. Asking again.** With an answer on screen, press the hotkey and the box
-opens right under it, so you can read the answer while typing the next
-question. A small reminder under the note shows the keys.
+**6. The board.** Answers stay on screen like writing on a school board.
+Under each new answer a small box waits for your next question: click in it
+(or press the hotkey) and type. It does not take the keyboard until you do.
+Press Esc and the dot wipes the board clean, scrubbing across each answer
+like an eraser. Old answers are hidden for the instant a new screenshot is
+taken, so they are never in the picture that is sent.
 
 ## Credits
 

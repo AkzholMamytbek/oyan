@@ -28,8 +28,11 @@ class Oyan:
     def __init__(self, app):
         self.overlay = OverlayController(app)
 
+        self.overlay.on_note_finished = self.show_box_under
+
         self.ask_box = AskBox()
         self.ask_box.submitted.connect(self.on_question)
+        self.ask_box.escaped.connect(self.on_escape)
 
         self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape)
 
@@ -60,32 +63,44 @@ class Oyan:
             )
         print("Press Ctrl+C here to quit.")
 
+    def _place_under(self, note):
+        """Where the typing box goes for this answer: under it, or above it
+        if there is no room below."""
+        screen = QGuiApplication.screenAt(note.box.center().toPoint()) or QGuiApplication.primaryScreen()
+        x = round(note.box.left())
+        y = round(note.box.bottom()) + NEXT_QUESTION_GAP
+        if y + BOX_HEIGHT > screen.availableGeometry().bottom():
+            y = round(note.box.top()) - NEXT_QUESTION_GAP - BOX_HEIGHT
+        return QPoint(x, y)
+
+    def show_box_under(self, note):
+        """An answer has just been written: put a waiting typing box under it.
+        It does not take the keyboard until you click in it."""
+        if not self.ask_box.is_typing():   # do not disturb if you are typing
+            self.ask_box.show_attached(self._place_under(note))
+
     def on_hotkey(self):
-        """The hotkey opens the box; pressing it again closes the box."""
-        if self.ask_box.isVisible():
+        """The hotkey starts typing; pressing it again while typing closes the box."""
+        if self.ask_box.is_typing():
             self.ask_box.close_box()
             return
 
         note = self.overlay.note
         if note is not None and note.visible:
-            # An answer is on screen: open the box right under it, so you can
-            # still read the answer while typing the next question. If there
-            # is no room below, open it above instead.
-            screen = QGuiApplication.screenAt(note.box.center().toPoint()) or QGuiApplication.primaryScreen()
-            x = round(note.box.left())
-            y = round(note.box.bottom()) + NEXT_QUESTION_GAP
-            if y + BOX_HEIGHT > screen.availableGeometry().bottom():
-                y = round(note.box.top()) - NEXT_QUESTION_GAP - BOX_HEIGHT
-            self.ask_box.open_at(QPoint(x, y))
+            # An answer is on screen: type right under it.
+            self.ask_box.attached = True
+            self.ask_box.open_at(self._place_under(note))
         else:
             self.ask_box.open_near(QCursor.pos())
 
     def on_escape(self):
-        """Esc: stop waiting for the AI and remove the answer from the screen."""
+        """Esc: stop waiting for the AI and wipe the board clean."""
         if self.ai.is_busy():
             self.ai.cancel()
             self.overlay.thinking = False
-        self.overlay.dismiss()
+        if self.ask_box.isVisible():
+            self.ask_box.close_box()
+        self.overlay.wipe_board()
 
     def on_question(self, question):
         """The owner pressed Enter. This is the ONLY place a capture starts."""
@@ -101,12 +116,12 @@ class Oyan:
 
         self.ai.cancel()   # forget an earlier question that is still waiting
         self.overlay.thinking = False
-        self.overlay.dismiss()   # remove the old answer so it is not in the new screenshot
         self.question = question
 
-        # Hide the buddy so it is not in the picture, and wait a moment so the
-        # ask box has really gone and your app is back in front.
-        self.overlay.set_buddy_visible(False)
+        # Hide the buddy and the answers on the board so they are not in the
+        # picture, and wait a moment so the ask box has really gone and your
+        # app is back in front.
+        self.overlay.set_board_visible(False)
         QTimer.singleShot(250, self.take_screenshot)
 
     def take_screenshot(self):
@@ -118,7 +133,7 @@ class Oyan:
             print(f"Could not take the screenshot: {error}")
             return
         finally:
-            self.overlay.set_buddy_visible(True)   # always bring the buddy back
+            self.overlay.set_board_visible(True)   # always bring everything back
 
         # Send the question and the screenshot to the AI model. The buddy
         # pulses while we wait for the reply.

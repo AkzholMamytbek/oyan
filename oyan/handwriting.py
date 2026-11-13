@@ -5,6 +5,11 @@ A Note knows three things:
 * how much of the text has been "written" so far (`progress`, in letters);
 * how to draw itself at that point in time (`paint`).
 
+Notes stay on the screen like writing on a school board until they are wiped.
+Wiping works like writing in reverse: `wipe` goes from 0 to 1 and everything
+to the left of the "wipe front" is no longer drawn, while the buddy scrubs up
+and down along that front like a board eraser.
+
 The writing effect
 ------------------
 We use a handwriting font that comes with macOS. To make it look written
@@ -31,27 +36,34 @@ GAP = 40                     # distance between the pointed-at spot and the note
 SCREEN_MARGIN = 10           # keep the note this far from the screen edges
 
 # A small reminder shown under the note once it is written.
-HINT_TEXT = "Control + Option + Space: ask again    Esc: close"
+HINT_TEXT = "Type below to ask again    Esc: wipe the board"
 HINT_SIZE = 11
 HINT_HEIGHT = 24             # room kept free under the note for the reminder
+SPACE_FOR_ASK_BOX = 56       # room kept free under that for the typing box
+GAP_BETWEEN_NOTES = 14       # when a new note has to move out of an old one's way
+WIPE_STROKES = 3             # how many times the eraser goes up and down per note
 
 PAPER = QColor(255, 250, 235, 240)   # warm paper, very slightly see-through
 INK = QColor(60, 40, 20)             # dark brown, like pencil
 
 
 class Note:
-    def __init__(self, text, anchor, screen_rect, has_point):
+    def __init__(self, text, anchor, screen_rect, has_point, avoid=()):
         """
         text        - the answer to write
         anchor      - the spot on screen the answer is about (QPointF)
         screen_rect - the monitor the note must stay inside (QRect)
         has_point   - False if the AI did not point at anything; then no
                       pointer line is drawn and `anchor` is just "near here"
+        avoid       - rectangles of notes already on the board; the new note
+                      is moved so it does not cover them
         """
         self.anchor = QPointF(anchor)
         self.has_point = has_point
         self.visible = False    # the overlay switches this on when the buddy arrives
         self.progress = 0.0     # how many letters have been written so far
+        self.wipe = 0.0         # 0 = untouched, 1 = completely wiped away
+        self.show_hint = True   # only the newest note shows the reminder
 
         self.font = QFont(FONT_NAME, FONT_SIZE)
         self.metrics = QFontMetricsF(self.font)
@@ -64,7 +76,7 @@ class Note:
         text_width = max(self.metrics.horizontalAdvance(line) for line in self.lines)
         width = text_width + 2 * PADDING
         height = len(self.lines) * self.line_height + 2 * PADDING
-        self.box = self._place_box(width, height, screen_rect)
+        self.box = self._place_box(width, height, screen_rect, avoid)
 
     # --- Layout ------------------------------------------------------------
 
@@ -84,20 +96,26 @@ class Note:
                 lines.append(current)
         return lines or ["..."]
 
-    def _place_box(self, width, height, screen_rect):
+    def _place_box(self, width, height, screen_rect, avoid):
         """Put the paper to the right of the anchor, or to the left if there
         is no room, and never off the edge of the screen."""
         left_limit = screen_rect.left() + SCREEN_MARGIN
         right_limit = screen_rect.right() - SCREEN_MARGIN - width
         top_limit = screen_rect.top() + SCREEN_MARGIN
-        bottom_limit = screen_rect.bottom() - SCREEN_MARGIN - height - HINT_HEIGHT
+        bottom_limit = screen_rect.bottom() - SCREEN_MARGIN - height - HINT_HEIGHT - SPACE_FOR_ASK_BOX
 
         x = self.anchor.x() + GAP
         if x > right_limit:
             x = self.anchor.x() - GAP - width
         x = min(max(x, left_limit), right_limit)
         y = min(max(self.anchor.y() - height / 2, top_limit), bottom_limit)
-        return QRectF(x, y, width, height)
+        box = QRectF(x, y, width, height)
+
+        # If that spot is already taken by an older note, slide down below it.
+        for other in sorted(avoid, key=lambda rect: rect.top()):
+            if box.intersects(other):
+                box.moveTop(min(other.bottom() + GAP_BETWEEN_NOTES, bottom_limit))
+        return box
 
     def bounds(self):
         """A rectangle containing everything the note draws (for repainting)."""
@@ -132,9 +150,29 @@ class Note:
 
     # --- Drawing -----------------------------------------------------------
 
+    # --- Wiping ------------------------------------------------------------
+
+    def _wipe_front(self):
+        """The x position the eraser has reached."""
+        area = self.bounds()
+        return area.left() + self.wipe * area.width()
+
+    def eraser_position(self):
+        """Where the eraser (the buddy) is: on the wipe front, scrubbing up and down."""
+        box = self.box
+        swing = math.sin(self.wipe * math.pi * 2 * WIPE_STROKES)   # -1 .. 1
+        return QPointF(self._wipe_front(), box.center().y() + swing * box.height() / 2)
+
     def paint(self, painter):
-        if not self.visible:
+        if not self.visible or self.wipe >= 1:
             return
+
+        painter.save()
+        if self.wipe > 0:
+            # Only draw what the eraser has not reached yet.
+            area = self.bounds()
+            area.setLeft(self._wipe_front())
+            painter.setClipRect(area, Qt.ClipOperation.IntersectClip)
 
         # A dot on the spot, and a line from it to the paper.
         if self.has_point and not self.box.contains(self.anchor):
@@ -169,7 +207,7 @@ class Note:
             letters_before += len(line)
 
         # Once everything is written, a small reminder of what you can do next.
-        if self.finished():
+        if self.finished() and self.show_hint:
             painter.setFont(QFont(".AppleSystemUIFont", HINT_SIZE))
             hint_width = painter.fontMetrics().horizontalAdvance(HINT_TEXT) + 16
             hint = QRectF(self.box.left(), self.box.bottom() + 5, hint_width, HINT_HEIGHT - 6)
@@ -178,3 +216,5 @@ class Note:
             painter.drawRoundedRect(hint, 9, 9)
             painter.setPen(QColor(255, 250, 235))
             painter.drawText(hint, Qt.AlignmentFlag.AlignCenter, HINT_TEXT)
+
+        painter.restore()
