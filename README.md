@@ -101,9 +101,11 @@ it, letter by letter, on a little piece of paper.
 to three at a time; a fourth pushes the oldest off. Each new answer is placed
 where it covers no other answer or drawing. Under the newest one a small box
 waits for your next question: click in it (or press the hotkey) and type. To
-erase, rub the cursor quickly over an answer, like a cloth: a strip is rubbed
-out where the cursor went, and when most of the answer is gone the rest goes
-too. Moving the cursor slowly does nothing. Esc wipes the whole board.
+erase, scrub the cursor quickly back and forth over an answer, like a cloth:
+a strip is rubbed out where the cursor goes, and when most of the answer is
+gone the rest goes too. Erasing only starts after a few quick changes of
+direction, so moving the mouse across an answer, however fast, never wipes
+it by accident. Esc wipes the whole board.
 
 **7. Circles, underlines and arrows.** The AI can now ask for a thing to be
 circled, a piece of text underlined, or an arrow drawn. The dot draws them
@@ -218,6 +220,11 @@ with their speeds and the gap between them.
 Option: **Option + A** to Ask, **Option + S** to Speak, hold **Option + D**
 to Draw. Oyan now takes these keys for itself, so they no longer type odd
 characters into the app you are in or switch the keyboard language.
+
+**23. Answers that keep out of the way.** Before writing, Oyan works out
+which parts of your screen hold text or pictures and which are blank (simple
+arithmetic on the screenshot, done on your Mac), and puts its answer in the
+nearest empty area instead of on top of what you are reading.
 
 ## Credits
 

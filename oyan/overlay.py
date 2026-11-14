@@ -73,7 +73,9 @@ WIPE_SECONDS = 0.55         # how long the eraser takes to wipe one answer
 DRAW_SPEED = 1300           # points of marker line drawn per second
 
 MAX_NOTES = 3               # answers kept on the board; a 4th removes the oldest
-RUB_SPEED = 900             # the cursor must move this fast (points/second) to count as rubbing
+RUB_SPEED = 1100            # the cursor must move this fast (points/second) to count as rubbing
+RUB_TURNS = 3               # ...and change direction this many times, back and forth,
+RUB_TURN_SECONDS = 0.9      # within this long, before anything is erased
 ERASER_WIDTH = 30           # width of the strip the cursor rubs out, in points
 ERASED_ENOUGH = 0.85        # once this share of an answer is rubbed out, the rest goes too
 
@@ -251,6 +253,8 @@ class OverlayController:
         self.on_note_finished = None   # a function to call when writing ends
         self.on_note_removed = None    # a function to call when an answer leaves the board
         self.rub_cursor = QPointF(QCursor.pos())   # where the cursor was on the last tick
+        self.rub_direction = None    # which way the cursor was last moving fast
+        self.rub_turns = []          # when it recently turned round (times)
         self.glide = None         # details of the current flight (see _start_glide)
         self.pause_until = 0.0
 
@@ -327,7 +331,7 @@ class OverlayController:
 
     # --- Showing and removing an answer -------------------------------------
 
-    def show_answer(self, text, spot, marks=(), hint=None):
+    def show_answer(self, text, spot, marks=(), hint=None, clutter=None):
         """Fly to `spot`, write `text` beside it, then draw the `marks`.
 
         The words come first because they are what you are waiting for; the
@@ -337,6 +341,8 @@ class OverlayController:
         not point at anything; then the note is written near the buddy.
         `marks` is a list of Mark objects (see marks.py); it may be empty.
         `hint` replaces the small reminder shown under the note, if given.
+        `clutter` knows which parts of the screen are busy (see clutter.py);
+        with it, the note is put in an empty area.
         Returns the new note.
         """
         self.remove_doodle()
@@ -367,6 +373,7 @@ class OverlayController:
             avoid=[old.bounds() for old in self.notes]
             + [mark.bounds() for old in self.notes for mark in old.marks],
             clear_of=marks_area,
+            clutter=clutter,
         )
         self.notes.append(new_note)
         new_note.marks = list(marks)   # they belong to this answer and are wiped with it
@@ -402,19 +409,36 @@ class OverlayController:
     def _rub_step(self, seconds_passed):
         """Erase with the cursor, like a cloth on a board.
 
-        While the cursor moves FAST over an answer (or its drawings), the
-        path it takes is added to that answer's `erased` list, and the
-        overlay rubs a strip out along it. Slow movement does nothing, so
-        just passing over an answer never damages it. When most of an
-        answer is gone, the rest is removed as well.
+        Erasing must be on purpose. Simply moving the mouse across an
+        answer, even quickly, does nothing. Only SCRUBBING counts: fast
+        movement that turns round and comes back several times in a row, the
+        way you rub with a cloth. Once you are scrubbing, the path the cursor
+        takes over an answer (or its drawings) is added to that answer's
+        `erased` list, and the overlay rubs a strip out along it. When most
+        of an answer is gone, the rest is removed as well.
         """
+        now = time.monotonic()
         cursor = QPointF(QCursor.pos())
         previous = self.rub_cursor
         self.rub_cursor = cursor
-        distance = math.hypot(cursor.x() - previous.x(), cursor.y() - previous.y())
+        moved = cursor - previous
+        distance = math.hypot(moved.x(), moved.y())
         speed = distance / seconds_passed if seconds_passed > 0 else 0
         if speed < RUB_SPEED:
             return
+
+        # Has the cursor turned round? Compare this movement's direction with
+        # the last fast one: if they point in roughly opposite ways, the
+        # "dot product" of the two directions is negative.
+        direction = moved / distance
+        if self.rub_direction is not None:
+            same_way = direction.x() * self.rub_direction.x() + direction.y() * self.rub_direction.y()
+            if same_way < -0.3:
+                self.rub_turns.append(now)
+        self.rub_direction = direction
+        self.rub_turns = [moment for moment in self.rub_turns if now - moment <= RUB_TURN_SECONDS]
+        if len(self.rub_turns) < RUB_TURNS:
+            return   # not scrubbing (yet): a single fast sweep erases nothing
 
         for note in list(self.notes):
             if note is self.writing or not note.visible:

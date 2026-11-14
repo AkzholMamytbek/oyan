@@ -39,19 +39,25 @@ GAP = 40                     # distance between the pointed-at spot and the note
 SCREEN_MARGIN = 10           # keep the note this far from the screen edges
 
 # A small reminder shown under the note once it is written.
-HINT_TEXT = "Type below to ask more    Rub fast to erase    Esc: wipe all"
+HINT_TEXT = "Type below to ask more    Scrub to erase    Esc: wipe all"
 HINT_SIZE = 11
 HINT_HEIGHT = 24             # room kept free under the note for the reminder
 SPACE_FOR_ASK_BOX = 56       # room kept free under that for the typing box
 GAP_BETWEEN_NOTES = 14       # when a new note has to move out of an old one's way
 WIPE_STROKES = 3             # how many times the eraser goes up and down per note
+# Choosing a place: covering a fully busy area costs COVERING_COST points,
+# and every point of distance from the spot costs DISTANCE_COST. With these
+# numbers, hiding a patch of ordinary text is as bad as being about 2000
+# points away, so an empty area nearly always wins.
+COVERING_COST = 10.0
+DISTANCE_COST = 0.001
 
 PAPER = QColor(255, 250, 235, 240)   # warm paper, very slightly see-through
 INK = QColor(60, 40, 20)             # dark brown, like pencil
 
 
 class Note:
-    def __init__(self, text, anchor, screen_rect, has_point, avoid=(), clear_of=None):
+    def __init__(self, text, anchor, screen_rect, has_point, avoid=(), clear_of=None, clutter=None):
         """
         text        - the answer to write
         anchor      - the spot on screen the answer is about (QPointF)
@@ -62,6 +68,8 @@ class Note:
                       is moved so it does not cover them
         clear_of    - a rectangle around this answer's own circles and arrows;
                       the note is placed beside it, not on top of it
+        clutter     - knows which parts of the screen are busy (clutter.py),
+                      so the note can go to an empty area; may be None
         """
         self.anchor = QPointF(anchor)
         self.has_point = has_point
@@ -85,7 +93,7 @@ class Note:
         text_width = max(self.metrics.horizontalAdvance(line) for line in self.lines)
         width = text_width + 2 * PADDING
         height = len(self.lines) * self.line_height + 2 * PADDING
-        self.box = self._place_box(width, height, screen_rect, avoid, clear_of)
+        self.box = self._place_box(width, height, screen_rect, avoid, clear_of, clutter)
 
     # --- Layout ------------------------------------------------------------
 
@@ -105,14 +113,14 @@ class Note:
                 lines.append(current)
         return lines or ["..."]
 
-    def _place_box(self, width, height, screen_rect, avoid, clear_of):
+    def _place_box(self, width, height, screen_rect, avoid, clear_of, clutter):
         """Find a place for the paper: near the spot, on the screen, and not
         on top of any other answer or drawing.
 
-        We make a list of candidate places, nearest first, and take the first
-        one that touches nothing. The first candidates are the natural ones
-        (right of the spot, left, below, above); after those we simply try
-        every position on a grid across the screen.
+        We make a list of candidate places: the natural ones (right of the
+        spot, left, below, above) and then every position on a grid across
+        the screen. Places that touch another answer or drawing are thrown
+        out. Of the rest we take the best one (see the end of this function).
         """
         left_limit = screen_rect.left() + SCREEN_MARGIN
         right_limit = screen_rect.right() - SCREEN_MARGIN - width
@@ -148,11 +156,8 @@ class Note:
             on_screen(ax - width / 2, max(ay + GAP, keep_clear.bottom() + 10)),           # below
             on_screen(ax - width / 2, min(ay - GAP, keep_clear.top() - 10) - height),     # above
         ]
-        for box in natural:
-            if is_free(box):
-                return box
 
-        # No natural place is free: try a grid of positions, nearest first.
+        # After the natural places, every position on a grid across the screen.
         step = 40
         grid = []
         y = top_limit
@@ -162,12 +167,32 @@ class Note:
                 grid.append(QRectF(x, y, width, height))
                 x += step
             y += step
-        grid.sort(key=lambda box: (box.center().x() - ax) ** 2 + (box.center().y() - ay) ** 2)
-        for box in grid:
-            if is_free(box):
-                return box
 
-        return natural[0]   # the screen is full; overlapping cannot be avoided
+        def distance(box):
+            return math.hypot(box.center().x() - ax, box.center().y() - ay)
+
+        if clutter is None:
+            # We know nothing about what is on the screen: take the nearest
+            # free place, trying the natural ones first.
+            grid.sort(key=distance)
+            for box in natural + grid:
+                if is_free(box):
+                    return box
+            return natural[0]   # the screen is full; overlapping cannot be avoided
+
+        # We know which parts of the screen are busy (see clutter.py). Give
+        # every free place a score and take the lowest: covering text or
+        # pictures costs a lot, being far from the spot costs a little. So
+        # the answer goes to the nearest EMPTY area, not onto what you are
+        # reading.
+        def score(box):
+            hidden = clutter.covered(footprint(box))    # 0 = empty area, about 0.2 = text
+            return hidden * COVERING_COST + distance(box) * DISTANCE_COST
+
+        free = [box for box in natural + grid if is_free(box)]
+        if not free:
+            return natural[0]
+        return min(free, key=score)
 
     def bounds(self):
         """A rectangle containing everything the note draws (for repainting)."""

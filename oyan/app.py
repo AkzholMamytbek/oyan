@@ -15,6 +15,7 @@ Each part lives in its own file and knows nothing about the others:
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
+* clutter.py  - finding the empty parts of the screen, so answers do not cover what you read
 * ai.py       - sending the question and screenshot to the AI model
 
 This file decides what happens when: hotkey pressed -> open the box,
@@ -29,6 +30,7 @@ from PyQt6.QtGui import QCursor, QGuiApplication
 from oyan import blocked, capture, history, hotkey, marks, settings
 from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
+from oyan.clutter import Clutter
 from oyan.overlay import BUDDY_COLORS, OverlayController
 from oyan.region import RegionSelector
 from oyan.sketch import DrawLayer
@@ -88,6 +90,7 @@ class Oyan:
         self.question = None     # the question being worked on right now
         self.screenshot = None   # the latest screenshot (its size and place on screen)
         self.exchanges = []      # (question, answer) pairs since the board was last wiped
+        self.clutter = None      # which parts of the latest screenshot are busy (see clutter.py)
 
     def start(self):
         self.overlay.start()
@@ -390,6 +393,13 @@ class Oyan:
         finally:
             capture.delete_screenshot()
 
+        # Work out which parts of the screen are busy, so the answer can be
+        # written in an empty area instead of on top of what you are reading.
+        try:
+            self.clutter = Clutter(image_bytes, self.screenshot)
+        except Exception:
+            self.clutter = None   # no harm done: the answer just goes next to the spot
+
         drew = bool(self.overlay.user_strokes)
         self.strokes_sent = drew
         self.overlay.thinking = True
@@ -438,7 +448,7 @@ class Oyan:
             elif kind == "arrow":
                 drawn.append(marks.arrow(first, second))
 
-        self.overlay.show_answer(answer.text, spot, drawn)
+        self.overlay.show_answer(answer.text, spot, drawn, clutter=self.clutter)
 
     def _remember(self, answer):
         """Write the question and answer to the history, and keep them for follow-ups."""
@@ -490,7 +500,7 @@ class Oyan:
             hint = "Click it to continue    Esc: stop"
         else:
             hint = "Click anywhere to continue    Esc: stop"
-        self.step_note = self.overlay.show_answer(text, spot, drawn, hint=hint)
+        self.step_note = self.overlay.show_answer(text, spot, drawn, hint=hint, clutter=self.clutter)
 
     def on_click(self):
         """The mouse was clicked somewhere in another app."""
