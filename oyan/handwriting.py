@@ -6,6 +6,9 @@ A Note knows three things:
 * how to draw itself at that point in time (`paint`).
 
 Notes stay on the screen like writing on a school board until they are wiped.
+Rubbing the cursor quickly over a note erases a strip where the cursor went,
+like a cloth; the strips are remembered in `erased` (the overlay does the
+actual rubbing out, see overlay.py).
 Wiping works like writing in reverse: `wipe` goes from 0 to 1 and everything
 to the left of the "wipe front" is no longer drawn, while the buddy scrubs up
 and down along that front like a board eraser.
@@ -36,7 +39,7 @@ GAP = 40                     # distance between the pointed-at spot and the note
 SCREEN_MARGIN = 10           # keep the note this far from the screen edges
 
 # A small reminder shown under the note once it is written.
-HINT_TEXT = "Type below to ask more    Rub to erase    Esc: wipe all"
+HINT_TEXT = "Type below to ask more    Rub fast to erase    Esc: wipe all"
 HINT_SIZE = 11
 HINT_HEIGHT = 24             # room kept free under the note for the reminder
 SPACE_FOR_ASK_BOX = 56       # room kept free under that for the typing box
@@ -65,7 +68,8 @@ class Note:
         self.visible = False    # the overlay switches this on when the buddy arrives
         self.progress = 0.0     # how many letters have been written so far
         self.wipe = 0.0         # 0 = untouched, 1 = completely wiped away
-        self.rubbed = 0.0       # 0 = untouched, 1 = rubbed away with the cursor
+        self.erased = []        # strips rubbed out with the cursor: [(from point, to point), ...]
+        self.erased_length = 0.0   # how far the cursor has rubbed over this note in total
         self.show_hint = True   # only the newest note shows the reminder
         self.hint_text = HINT_TEXT
         self.marks = []         # circles, underlines and arrows drawn for this answer
@@ -214,9 +218,6 @@ class Note:
     def _begin(self, painter):
         """Settings shared by both drawing steps: paleness and the wipe."""
         painter.save()
-        # Rubbing with the cursor makes the note paler and paler, like chalk
-        # under a cloth.
-        painter.setOpacity(max(1.0 - self.rubbed, 0.0))
         if self.wipe > 0:
             # Only draw what the eraser has not reached yet.
             area = self.bounds()
@@ -224,19 +225,16 @@ class Note:
             painter.setClipRect(area, Qt.ClipOperation.IntersectClip)
 
     def paint_pointer(self, painter):
-        """Draw the dot on the spot and the line from it to the paper.
+        """Draw a small dot on the spot the answer is about.
 
-        The overlay draws the pointers of ALL answers first and the papers
-        afterwards, so a line never runs across another answer's text.
+        (There used to be a line from the dot to the paper as well. The
+        circles and underlines already show the place, so the line is gone.)
         """
         if not self.visible or self.wipe >= 1:
             return
         if self.has_point and not self.box.contains(self.anchor):
             self._begin(painter)
-            near_x = min(max(self.anchor.x(), self.box.left()), self.box.right())
-            near_y = min(max(self.anchor.y(), self.box.top()), self.box.bottom())
-            painter.setPen(QPen(INK, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            painter.drawLine(self.anchor, QPointF(near_x, near_y))
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(INK)
             painter.drawEllipse(self.anchor, 4, 4)
             painter.restore()

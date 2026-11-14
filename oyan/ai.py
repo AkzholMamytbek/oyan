@@ -60,7 +60,9 @@ TIMEOUT_SECONDS = 90      # give up if there is no reply after this long
 WARM_SECONDS = 120        # how long a program started in advance may wait for a question
 
 SYSTEM_PROMPT = (
-    "You are Oyan, a small friendly helper that lives next to the cursor on a Mac. "
+    "You are Oyan, a small helper that lives next to the cursor on a Mac. "
+    "Your manner is calm, kind and patient: plain words, no hype, no "
+    "exclamation marks, never talking down. "
     "You are given a screenshot of the screen and a question about it. "
     "Look at the screenshot, then answer in one or two short plain sentences. "
     "No markdown, no lists. "
@@ -78,6 +80,9 @@ SYSTEM_PROMPT = (
     "If the user asks you to draw or sketch something, really draw it, with "
     "pen strokes: each [DRAW:x,y x,y x,y ...] tag is one stroke, a list of "
     "points separated by spaces that the pen passes through without lifting. "
+    "A stroke may name its colour first, [DRAW:blue:x,y x,y ...], choosing "
+    "from red, blue, green, orange, purple, brown and black; use different "
+    "colours to tell the parts of a drawing apart. "
     "Use ten or more points for a curve so it looks smooth, and [CIRCLE:...] "
     "for round outlines. Draw every part needed to recognise the thing (a face "
     "needs its outline, two eyes, a nose and a mouth; a house needs walls, a "
@@ -112,8 +117,8 @@ SYSTEM_PROMPT = (
 POINT_TAG = re.compile(r"\[POINT:\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]")
 # Matches [CIRCLE:1,2,3,4], [UNDERLINE:1,2,3,4] and [ARROW:1,2,3,4].
 MARK_TAG = re.compile(r"\[(CIRCLE|UNDERLINE|ARROW):\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]")
-# Matches [DRAW:10,20 30,40 50,60]: one freehand pen stroke through those points.
-DRAW_TAG = re.compile(r"\[DRAW:([\d\s,]+)\]")
+# Matches [DRAW:10,20 30,40 50,60] and [DRAW:blue:10,20 30,40]: one freehand pen stroke.
+DRAW_TAG = re.compile(r"\[DRAW:(?:\s*([a-zA-Z]+)\s*:)?([\d\s,]+)\]")
 PAIR = re.compile(r"(\d+)\s*,\s*(\d+)")
 # Matches [LABEL:300,200:v = 20 m/s]: a few words written at that point.
 LABEL_TAG = re.compile(r"\[LABEL:\s*(\d+)\s*,\s*(\d+)\s*:([^\]]*)\]")
@@ -131,7 +136,7 @@ class Answer:
     text: str             # the answer with the tags removed
     point: tuple = None   # (x, y) in screenshot pixels, or None
     label: str = ""       # short name of the thing pointed at
-    # e.g. [("circle", x1, y1, x2, y2), ("draw", [(x, y), (x, y), ...])], in drawing order
+    # e.g. [("circle", x1, y1, x2, y2), ("draw", [(x, y), (x, y), ...], "blue")], in drawing order
     marks: list = field(default_factory=list)
     steps: list = field(default_factory=list)   # e.g. [((x, y), "Open File"), (None, "Choose Export")]
 
@@ -152,9 +157,10 @@ def parse_reply(reply):
         numbers = [int(match.group(i)) for i in (2, 3, 4, 5)]   # x1, y1, x2, y2
         found.append((match.start(), (kind, *numbers)))
     for match in DRAW_TAG.finditer(reply):
-        points = [(int(x), int(y)) for x, y in PAIR.findall(match.group(1))]
+        colour = (match.group(1) or "red").lower()
+        points = [(int(x), int(y)) for x, y in PAIR.findall(match.group(2))]
         if len(points) >= 2:
-            found.append((match.start(), ("draw", points)))
+            found.append((match.start(), ("draw", points, colour)))
     for match in LABEL_TAG.finditer(reply):
         words = match.group(3).strip()
         if words:

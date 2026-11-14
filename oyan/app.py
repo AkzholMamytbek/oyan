@@ -392,6 +392,10 @@ class Oyan:
         """The AI replied. `answer` has the text and the point (see ai.py)."""
         self.overlay.thinking = False
         self._remember(answer)
+        # Your own pen marks have done their job once the answer is here.
+        if self.overlay.user_strokes:
+            self.overlay.set_user_strokes([])
+            self.strokes_sent = False
         if not answer.steps and self.speaker.should_speak(self.asked_by_voice):
             self.speaker.speak(answer.text)
 
@@ -408,9 +412,9 @@ class Oyan:
         drawn = []
         for kind, *numbers in answer.marks:
             if kind == "draw":
-                # A freehand pen stroke: a list of points.
+                # A freehand pen stroke: a list of points and a colour name.
                 points = [self.screenshot.to_screen(x, y) for x, y in numbers[0]]
-                drawn.append(marks.freehand(points))
+                drawn.append(marks.freehand(points, numbers[1]))
                 continue
             if kind == "label":
                 # A few words written into a sketch.

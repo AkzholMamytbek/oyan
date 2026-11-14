@@ -48,7 +48,7 @@ from AppKit import (
     NSWindowStyleMaskNonactivatingPanel,
 )
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPolygonF
+from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPolygonF, QRegion
 from PyQt6.QtWidgets import QWidget
 
 from oyan.doodles import make_doodle
@@ -74,8 +74,8 @@ DRAW_SPEED = 1300           # points of marker line drawn per second
 
 MAX_NOTES = 3               # answers kept on the board; a 4th removes the oldest
 RUB_SPEED = 900             # the cursor must move this fast (points/second) to count as rubbing
-RUB_DISTANCE = 1400         # this much fast rubbing over an answer erases it
-RUB_RECOVERY = 0.35         # how quickly a half-rubbed answer comes back, per second
+ERASER_WIDTH = 30           # width of the strip the cursor rubs out, in points
+ERASED_ENOUGH = 0.85        # once this share of an answer is rubbed out, the rest goes too
 
 IDLE_SECONDS = 30           # mouse still for this long -> draw a doodle
 DOODLE_PAUSE_SECONDS = 45   # wait at least this long between doodles
@@ -93,7 +93,8 @@ BUDDY_COLORS = {
 }
 DEFAULT_COLOR = "burgundy"
 LISTENING_COLOR = QColor(255, 70, 70)  # bright red while the microphone is on
-BUDDY_OUTLINE = QColor(255, 250, 235)  # a pale edge, so it shows on dark and light screens
+# The shadow under the triangle: (how far it is shifted, how dark), outermost first.
+SHADOW_LAYERS = [(4.0, 22), (3.0, 34), (2.0, 46), (1.0, 58)]
 
 # The triangle's corners, measured from its middle, in points: the tip is at
 # the top left, like a mouse arrow.
@@ -187,6 +188,25 @@ class ScreenOverlay(QWidget):
             for note in controller.notes:
                 note.paint(painter)
 
+            # Rub out the strips the cursor has erased. "Clear" is a special
+            # way of painting that removes what is there instead of adding
+            # colour, leaving the screen behind showing through again. It is
+            # limited to the note and its drawings, so nothing else is touched.
+            for note in controller.notes:
+                if not note.erased:
+                    continue
+                painter.save()
+                allowed = QRegion(note.bounds().toAlignedRect())
+                for mark in note.marks:
+                    allowed += QRegion(mark.bounds().toAlignedRect())
+                painter.setClipRegion(allowed, Qt.ClipOperation.IntersectClip)
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+                painter.setPen(QPen(Qt.GlobalColor.black, ERASER_WIDTH, Qt.PenStyle.SolidLine,
+                                    Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                for start, end in note.erased:
+                    painter.drawLine(start, end)
+                painter.restore()
+
         if not controller.buddy_visible:
             return   # hidden while a screenshot is being taken
 
@@ -197,7 +217,12 @@ class ScreenOverlay(QWidget):
         scale = controller.pulse()
         triangle = QPolygonF([pos + QPointF(x, y) * scale for x, y in BUDDY_SHAPE])
         color = LISTENING_COLOR if controller.listening else BUDDY_COLORS[controller.color_name]
-        painter.setPen(QPen(BUDDY_OUTLINE, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.setPen(Qt.PenStyle.NoPen)
+        # A soft shadow instead of an outline: the same triangle drawn a few
+        # times, see-through, each a little further down and to the right.
+        for offset, darkness in SHADOW_LAYERS:
+            painter.setBrush(QColor(0, 0, 0, darkness))
+            painter.drawPolygon(triangle.translated(offset, offset * 1.3))
         painter.setBrush(color)
         painter.drawPolygon(triangle)
 
@@ -375,33 +400,38 @@ class OverlayController:
                 self.on_note_removed(note)
 
     def _rub_step(self, seconds_passed):
-        """Erase an answer by rubbing the cursor over it, like a cloth on a board.
+        """Erase with the cursor, like a cloth on a board.
 
-        Moving the cursor FAST while it is over an answer adds to that
-        answer's `rubbed` amount, and the answer gets paler. Enough rubbing
-        removes it. Stop early and it slowly comes back. Moving the cursor
-        across an answer at normal speed does nothing.
+        While the cursor moves FAST over an answer (or its drawings), the
+        path it takes is added to that answer's `erased` list, and the
+        overlay rubs a strip out along it. Slow movement does nothing, so
+        just passing over an answer never damages it. When most of an
+        answer is gone, the rest is removed as well.
         """
         cursor = QPointF(QCursor.pos())
-        moved = cursor - self.rub_cursor
+        previous = self.rub_cursor
         self.rub_cursor = cursor
-        distance = math.hypot(moved.x(), moved.y())
+        distance = math.hypot(cursor.x() - previous.x(), cursor.y() - previous.y())
         speed = distance / seconds_passed if seconds_passed > 0 else 0
+        if speed < RUB_SPEED:
+            return
 
         for note in list(self.notes):
             if note is self.writing or not note.visible:
                 continue
-            before = note.rubbed
-            if speed >= RUB_SPEED and note.box.adjusted(-10, -10, 10, 10).contains(cursor):
-                note.rubbed += distance / RUB_DISTANCE
-            else:
-                note.rubbed = max(note.rubbed - RUB_RECOVERY * seconds_passed, 0.0)
-            if note.rubbed != before:
-                for mark in note.marks:
-                    mark.fade = max(1.0 - note.rubbed, 0.0)   # its drawings fade with it
-                    self._repaint(mark.bounds())
-                self._repaint(note.bounds())
-            if note.rubbed >= 1.0:
+            areas = [note.box.adjusted(-10, -10, 10, 10)] + [mark.bounds() for mark in note.marks]
+            if not any(area.contains(cursor) or area.contains(previous) for area in areas):
+                continue
+            note.erased.append((previous, cursor))
+            if note.box.adjusted(-10, -10, 10, 10).contains(cursor):
+                note.erased_length += distance
+            # Repaint the strip that was just rubbed out.
+            pad = ERASER_WIDTH
+            self._repaint(QRectF(previous, cursor).normalized().adjusted(-pad, -pad, pad, pad))
+
+            # Rough share of the paper that has been rubbed: strip area / paper area.
+            paper_area = note.box.width() * note.box.height()
+            if note.erased_length * ERASER_WIDTH >= ERASED_ENOUGH * paper_area:
                 self.remove_note(note)
 
     def _draw_next(self):

@@ -24,6 +24,16 @@ from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QPainterPath, QPen
 
 MARKER = QColor(226, 68, 44)   # red-orange, like a board marker
 MARKER_WIDTH = 3.2
+# The colours Oyan's pen can use for freehand strokes, by name.
+PEN_COLOURS = {
+    "red": MARKER,
+    "blue": QColor(40, 110, 220),
+    "green": QColor(30, 150, 80),
+    "orange": QColor(240, 140, 30),
+    "purple": QColor(140, 70, 200),
+    "brown": QColor(130, 85, 45),
+    "black": QColor(40, 35, 30),
+}
 CIRCLE_PADDING = 8             # how far outside the thing the circle is drawn
 ARROW_HEAD = 14                # length of the arrow head's sides
 SMOOTH_FROM_POINTS = 7         # pen strokes with at least this many points are rounded
@@ -201,8 +211,9 @@ def underline(rect):
     return Mark([points])
 
 
-def freehand(points):
+def freehand(points, colour="red"):
     """A pen stroke through the given points, with the corners rounded off.
+    `colour` is one of the names in PEN_COLOURS.
 
     The rounding is "Chaikin's corner cutting": replace every corner by two
     points a quarter of the way along the lines on either side of it. Doing
@@ -222,7 +233,7 @@ def freehand(points):
         points = smoother
     if closed:
         points.append(QPointF(points[0]))   # make sure a closed shape really closes
-    return Mark([points])
+    return Mark([points], color=PEN_COLOURS.get(colour, MARKER))
 
 
 def arrow(start, end):

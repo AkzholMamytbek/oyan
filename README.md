@@ -101,8 +101,9 @@ it, letter by letter, on a little piece of paper.
 to three at a time; a fourth pushes the oldest off. Each new answer is placed
 where it covers no other answer or drawing. Under the newest one a small box
 waits for your next question: click in it (or press the hotkey) and type. To
-erase one answer, rub the cursor quickly back and forth over it, like a
-cloth: it fades and disappears. Esc wipes the whole board.
+erase, rub the cursor quickly over an answer, like a cloth: a strip is rubbed
+out where the cursor went, and when most of the answer is gone the rest goes
+too. Moving the cursor slowly does nothing. Esc wipes the whole board.
 
 **7. Circles, underlines and arrows.** The AI can now ask for a thing to be
 circled, a piece of text underlined, or an arrow drawn. The dot draws them
@@ -194,15 +195,15 @@ AI program is started while you are still typing, the answer is written
 before the circles and arrows are drawn, and the animations are quicker.
 An answer takes about four seconds from Enter to fully written.
 
-**19. A new look.** Oyan is now a small triangle, like the tip of a mouse
-arrow, in burgundy or royal green. Type `/green` or `/burgundy` in the ask
+**19. A new look.** Oyan is now a small triangle with a soft shadow, like
+the tip of a mouse arrow, in burgundy or royal green. Type `/green` or `/burgundy` in the ask
 box to switch; the choice is remembered.
 
 **20. Your own pen.** Hold **Option + D** and drag to draw on the
 screen: circle a piece of code, underline a word, point an arrow. Let go of
 the keys and the ask box opens next to your drawing. Your blue marks are in
-the screenshot, so the AI sees exactly what you mean. They stay for that one
-question; Esc removes them.
+the screenshot, so the AI sees exactly what you mean. They disappear when
+the answer arrives.
 
 **21. A tutor, not an answer machine.** Show Oyan an exercise (maths,
 physics, code) and ask for help: it gives one concrete next step for that
