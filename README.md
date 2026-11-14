@@ -178,11 +178,12 @@ into macOS, entirely on your Mac. It is off by default; turn it on with
 `python -m oyan --voice on` (or `auto` to speak only when you asked by
 voice). Esc stops it mid-sentence.
 
-**17. Asking by voice.** Press **Option + S**, speak, and press it
-again. Oyan turns red while the microphone is on. A speech-recognition model
-(Whisper) running on your Mac turns what you said into text, and the question
-is sent at once with a fresh screenshot, as if you had typed it and pressed
-Enter. Your voice never leaves the Mac. One-time setup:
+**17. Asking by voice.** Press **Option + S** once and speak. Oyan turns red
+while the microphone is on. When you have been quiet for about a second it
+stops listening by itself; a speech-recognition model (Whisper) running on
+your Mac turns what you said into text, and the question is sent at once with
+a fresh screenshot. Pressing Option + S again stops it early, Esc cancels.
+Your voice never leaves the Mac. One-time setup:
 
 ```bash
 python -m oyan --setup-voice    # downloads the model, about 150 MB, once

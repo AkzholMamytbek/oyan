@@ -109,7 +109,7 @@ class Oyan:
                 "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
                 "  3. Quit Oyan with Ctrl+C and start it again."
             )
-        print(f"To ask by voice, press {hotkey.VOICE_HOTKEY_NAME}, speak, and press it again.")
+        print(f"To ask by voice, press {hotkey.VOICE_HOTKEY_NAME} and speak; Oyan stops listening when you go quiet.")
         print("To see everything Oyan has sent:  python -m oyan --log")
         print("To search past questions:         python -m oyan --history")
         print("Press Ctrl+C here to quit.")
@@ -191,9 +191,10 @@ class Oyan:
             self.ask_box.open_near(QCursor.pos())
 
     # --- Asking by voice -----------------------------------------------------
-    # Press the voice hotkey, speak, press it again. Your words are turned
-    # into text on this Mac and the question is sent at once, with a fresh
-    # screenshot, exactly as if you had typed it and pressed Enter.
+    # Press the voice key once and speak. When you go quiet for about a
+    # second, Oyan stops listening by itself, turns your words into text on
+    # this Mac, and sends the question at once with a fresh screenshot,
+    # exactly as if you had typed it and pressed Enter.
 
     def on_voice_hotkey(self):
         if self.listener is None:
@@ -210,18 +211,24 @@ class Oyan:
             self.listener = listen.Listener()
             self.listener.heard.connect(self.on_heard)
             self.listener.failed.connect(self.on_voice_failed)
+            self.listener.stopped.connect(self.on_listening_stopped)
 
         if self.listener.is_listening():
-            # Second press: stop recording and work out what was said.
-            self.overlay.listening = False
-            self.overlay.thinking = True
+            # A second press stops the recording at once. (Normally you do
+            # not need it: Oyan stops by itself when you go quiet.)
             self.listener.stop()
         else:
             self.speaker.stop()
-            if self.ask_box.isVisible() and not self.ask_box.attached:
+            if self.ask_box.isVisible():
                 self.ask_box.close_box()
+            self.ai.prepare()               # get the AI program ready while you talk
             self.overlay.listening = True   # the buddy turns red: the microphone is on
             self.listener.start()
+
+    def on_listening_stopped(self):
+        """The microphone is off; the words are being worked out."""
+        self.overlay.listening = False
+        self.overlay.thinking = True
 
     def on_heard(self, text):
         self.overlay.thinking = False
