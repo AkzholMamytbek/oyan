@@ -335,21 +335,6 @@ class Note:
             area.setLeft(self._wipe_front())
             painter.setClipRect(area, Qt.ClipOperation.IntersectClip)
 
-    def paint_pointer(self, painter):
-        """Draw a small dot on the spot the answer is about.
-
-        (There used to be a line from the dot to the paper as well. The
-        circles and underlines already show the place, so the line is gone.)
-        """
-        if not self.visible or self.wipe >= 1:
-            return
-        if self.has_point and not self.box.contains(self.anchor):
-            self._begin(painter)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(INK)
-            painter.drawEllipse(self.anchor, 4, 4)
-            painter.restore()
-
     def paint(self, painter):
         """Draw the paper, the text and the reminder."""
         if not self.visible or self.wipe >= 1:

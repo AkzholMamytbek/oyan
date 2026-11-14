@@ -187,10 +187,8 @@ class ScreenOverlay(QWidget):
             controller.doodle.paint(painter)
 
         if controller.notes_visible:
-            # Three layers, bottom to top: pointer lines, then the circles
-            # and arrows, then the papers with their text.
-            for note in controller.notes:
-                note.paint_pointer(painter)
+            # Two layers: first the circles and arrows, then the papers with
+            # their text on top.
             for note in controller.notes:
                 for mark in note.marks:
                     mark.paint(painter)
