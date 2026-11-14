@@ -20,13 +20,16 @@ All positions here are "global" screen points (see overlay.py).
 import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QPainterPath, QPen
 
 MARKER = QColor(226, 68, 44)   # red-orange, like a board marker
 MARKER_WIDTH = 3.2
 CIRCLE_PADDING = 8             # how far outside the thing the circle is drawn
 ARROW_HEAD = 14                # length of the arrow head's sides
 SMOOTH_FROM_POINTS = 7         # pen strokes with at least this many points are rounded
+LABEL_FONT = "Bradley Hand"    # the same handwriting as the answers
+LABEL_SIZE = 17
+LABEL_MAX_LETTERS = 30
 
 
 class Mark:
@@ -100,6 +103,59 @@ class Mark:
             color.setAlphaF(color.alphaF() * max(self.fade, 0.0))
             painter.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
             painter.drawPath(path)
+
+
+class Label:
+    """A few handwritten words, part of a sketch (for example "v = 20 m/s").
+
+    It behaves like a Mark (it has `progress`, `fade`, `paint` and so on), so
+    the overlay can draw it live in exactly the same way: here `progress`
+    reveals the words from left to right.
+    """
+
+    def __init__(self, position, text):
+        self.position = QPointF(position)   # where the first letter starts (its top-left)
+        self.text = text[:LABEL_MAX_LETTERS]
+        self.font = QFont(LABEL_FONT, LABEL_SIZE)
+        metrics = QFontMetricsF(self.font)
+        self.width = metrics.horizontalAdvance(self.text)
+        self.height = metrics.height()
+        self.ascent = metrics.ascent()
+        self.progress = 0.0
+        self.fade = 1.0
+        # "Length of ink", so that writing a label takes about as long as
+        # drawing a line of twice its width.
+        self.total_length = max(self.width * 2, 1.0)
+
+    def bounds(self):
+        return QRectF(self.position.x(), self.position.y(), self.width, self.height).adjusted(-10, -10, 10, 10)
+
+    def start_position(self):
+        return self.position + QPointF(0, self.height / 2)
+
+    def pen_position(self):
+        shown = min(max(self.progress, 0.0), 1.0)
+        return self.position + QPointF(self.width * shown, self.height / 2)
+
+    def paint(self, painter):
+        if self.progress <= 0 or self.fade <= 0:
+            return
+        shown = min(self.progress, 1.0)
+        color = QColor(MARKER)
+        color.setAlphaF(max(self.fade, 0.0))
+        painter.save()
+        painter.setClipRect(
+            QRectF(self.position.x() - 2, self.position.y() - 4, self.width * shown + 4, self.height + 8),
+            Qt.ClipOperation.IntersectClip,
+        )
+        painter.setFont(self.font)
+        painter.setPen(color)
+        painter.drawText(self.position + QPointF(0, self.ascent), self.text)
+        painter.restore()
+
+
+def label(position, text):
+    return Label(position, text)
 
 
 # --- Recipes for each kind of mark ------------------------------------------

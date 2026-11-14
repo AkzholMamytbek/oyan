@@ -410,6 +410,11 @@ class Oyan:
                 points = [self.screenshot.to_screen(x, y) for x, y in numbers[0]]
                 drawn.append(marks.freehand(points))
                 continue
+            if kind == "label":
+                # A few words written into a sketch.
+                x, y, words = numbers
+                drawn.append(marks.label(self.screenshot.to_screen(x, y), words))
+                continue
             x1, y1, x2, y2 = numbers
             first = self.screenshot.to_screen(x1, y1)
             second = self.screenshot.to_screen(x2, y2)

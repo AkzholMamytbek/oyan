@@ -1,9 +1,9 @@
 # Oyan
 
-Oyan is a screen-aware AI buddy for macOS that lives next to your cursor.
-You ask a question about what is on your screen; Oyan looks at a screenshot,
-glides to the relevant spot, and writes the answer right there in a
-handwriting style.
+Oyan is a screen-aware AI tutor for macOS that lives next to your cursor.
+You ask about what is on your screen, by typing, by voice, or by circling it
+with your own pen; Oyan looks at a screenshot, glides to the relevant spot,
+and writes and draws its explanation right there in a handwriting style.
 
 > **Status: versions 1 to 3 are done; version 4 (voice) is in progress.** See
 > [Updates](#updates) for what works so far.
@@ -203,6 +203,14 @@ screen: circle a piece of code, underline a word, point an arrow. Let go of
 the keys and the ask box opens next to your drawing. Your blue marks are in
 the screenshot, so the AI sees exactly what you mean. They stay for that one
 question; Esc removes them.
+
+**21. A tutor, not an answer machine.** Show Oyan an exercise (maths,
+physics, code) and ask for help: it gives one concrete next step for that
+exact exercise, not the final answer. Show it your attempt and it tells you
+whether it is right and where the first mistake is. Say "show me the
+solution" when you want the whole thing. For problems that are easier to see
+than to read, it draws a small labelled sketch, such as two cars on a road
+with their speeds and the gap between them.
 
 ## Credits
 

@@ -85,7 +85,21 @@ SYSTEM_PROMPT = (
     "drawing 200 to 350 pixels across and place it in an emptier part of the "
     "screenshot. Then add one short sentence and put the POINT tag just beside "
     "the drawing, not on it. "
-    "Exception, for how-to questions: if doing what is asked needs two or more "
+    "You are also the user's tutor. When the screen shows an exercise or a "
+    "problem (maths, physics, programming) and the user wants help with it, do "
+    "not give the final answer. Give ONE concrete next step for this exact "
+    "exercise: name the rule and say exactly what to write, for example "
+    "'Combine the two logs into one: log2(x(x-2)) = 3', never a vague tip like "
+    "'think about log rules'. Mark the place it applies to with a drawing tag. "
+    "If the user shows or types their own attempt, say whether it is right and "
+    "point at the first mistake. Give the complete worked solution only when "
+    "the user asks for it (for example 'show me the solution' or 'just tell "
+    "me'). When a small sketch makes the idea clearer (two cars on a road, the "
+    "forces on a block, the shape of a graph), draw it in an empty area with "
+    "DRAW, CIRCLE and ARROW tags, and name its parts with [LABEL:x,y:short "
+    "text] tags, which write up to 25 characters starting at that point. "
+    "Always answer in English. "
+    "Exception, for how-to questions about using an app: if doing what is asked needs two or more "
     "separate clicks or actions, do not write sentences and do not use the tags "
     "above. Reply only with step tags, in order, at most six: "
     "[STEP:x,y:short instruction] where x,y is where to click for that step on "
@@ -101,12 +115,14 @@ MARK_TAG = re.compile(r"\[(CIRCLE|UNDERLINE|ARROW):\s*(\d+)\s*,\s*(\d+)\s*,\s*(\
 # Matches [DRAW:10,20 30,40 50,60]: one freehand pen stroke through those points.
 DRAW_TAG = re.compile(r"\[DRAW:([\d\s,]+)\]")
 PAIR = re.compile(r"(\d+)\s*,\s*(\d+)")
+# Matches [LABEL:300,200:v = 20 m/s]: a few words written at that point.
+LABEL_TAG = re.compile(r"\[LABEL:\s*(\d+)\s*,\s*(\d+)\s*:([^\]]*)\]")
 # Matches [STEP:120,45:Open the File menu] and [STEP:none:Choose Export].
 STEP_TAG = re.compile(r"\[STEP:\s*(?:(\d+)\s*,\s*(\d+)|none)\s*:([^\]]*)\]")
 # Matches any of our tags at all, so we can remove them from the text.
-ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW|DRAW|STEP):[^\]]*\]")
+ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW|DRAW|LABEL|STEP):[^\]]*\]")
 MAX_STEPS = 6
-MAX_MARKS = 14        # the most circles, lines, arrows and pen strokes in one answer
+MAX_MARKS = 20        # the most circles, lines, arrows, pen strokes and labels in one answer
 MAX_REMEMBERED = 6     # how many earlier questions are sent along with a follow-up
 
 
@@ -139,6 +155,10 @@ def parse_reply(reply):
         points = [(int(x), int(y)) for x, y in PAIR.findall(match.group(1))]
         if len(points) >= 2:
             found.append((match.start(), ("draw", points)))
+    for match in LABEL_TAG.finditer(reply):
+        words = match.group(3).strip()
+        if words:
+            found.append((match.start(), ("label", int(match.group(1)), int(match.group(2)), words)))
     marks = [mark for _, mark in sorted(found, key=lambda item: item[0])]
 
     steps = []
