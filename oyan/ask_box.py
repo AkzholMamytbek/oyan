@@ -25,6 +25,9 @@ BOX_WIDTH = 400
 BOX_HEIGHT = 44
 OFFSET_FROM_CURSOR = QPoint(18, 34)   # below the cursor and the buddy dot
 
+PLACEHOLDER_NEW = "Ask about your screen…   (Shift+Enter: pick an area)"
+PLACEHOLDER_FOLLOW_UP = "Follow up on this…   (Option+Enter: look again)"
+
 PAPER = QColor(255, 250, 235)         # warm paper colour
 INK = QColor(60, 40, 20)              # dark brown, like pencil
 
@@ -47,8 +50,10 @@ def bring_to_front(other_app):
 class AskBox(QWidget):
     # Signals are how a Qt object tells the rest of the program something
     # happened. Other code "connects" a function to them.
-    submitted = pyqtSignal(str)   # the owner pressed Enter; carries the question
+    # Enter: carries the question, and whether the box was attached under an answer.
+    submitted = pyqtSignal(str, bool)
     submitted_for_area = pyqtSignal(str)   # Shift+Enter: choose part of the screen first
+    submitted_fresh = pyqtSignal(str)      # Option+Enter: take a new picture of the screen
     cancelled = pyqtSignal()      # the owner pressed Esc or clicked away
     escaped = pyqtSignal()        # the owner pressed Esc while typing in the box
 
@@ -70,7 +75,7 @@ class AskBox(QWidget):
         self.setFixedSize(BOX_WIDTH, BOX_HEIGHT)
 
         self.input = QLineEdit()
-        self.input.setPlaceholderText("Ask about your screen…   (Shift+Enter: pick an area)")
+        self.input.setPlaceholderText(PLACEHOLDER_NEW)
         self.input.setFrame(False)
         self.input.setStyleSheet(
             f"background: transparent; color: {INK.name()}; font-size: 15px;"
@@ -95,6 +100,7 @@ class AskBox(QWidget):
         self._previous_app = app_in_front()
 
         self.input.clear()
+        self.input.setPlaceholderText(PLACEHOLDER_FOLLOW_UP if self.attached else PLACEHOLDER_NEW)
         self.move(self._keep_on_screen(top_left))
         self.show()
         show_on_every_desktop(self, takes_keyboard=True)   # also over full-screen apps
@@ -124,6 +130,7 @@ class AskBox(QWidget):
         """
         self.attached = True
         self.input.clear()
+        self.input.setPlaceholderText(PLACEHOLDER_FOLLOW_UP)
         self.move(self._keep_on_screen(top_left))
         self.show()
         show_on_every_desktop(self, takes_keyboard=True)
@@ -164,13 +171,16 @@ class AskBox(QWidget):
         question = self.input.text().strip()
         if not question:
             return   # ignore Enter on an empty box
-        # Was Shift held down while Enter was pressed?
-        shift_held = bool(QGuiApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+        # Which extra keys were held down while Enter was pressed?
+        held = QGuiApplication.keyboardModifiers()
+        was_attached = self.attached
         self.close_box()
-        if shift_held:
+        if held & Qt.KeyboardModifier.ShiftModifier:
             self.submitted_for_area.emit(question)
+        elif held & Qt.KeyboardModifier.AltModifier:      # Alt is the Option key
+            self.submitted_fresh.emit(question)
         else:
-            self.submitted.emit(question)
+            self.submitted.emit(question, was_attached)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

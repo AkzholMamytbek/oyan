@@ -36,7 +36,7 @@ GAP = 40                     # distance between the pointed-at spot and the note
 SCREEN_MARGIN = 10           # keep the note this far from the screen edges
 
 # A small reminder shown under the note once it is written.
-HINT_TEXT = "Type below to ask again    Esc: wipe the board"
+HINT_TEXT = "Type below to follow up    Esc: wipe the board"
 HINT_SIZE = 11
 HINT_HEIGHT = 24             # room kept free under the note for the reminder
 SPACE_FOR_ASK_BOX = 56       # room kept free under that for the typing box

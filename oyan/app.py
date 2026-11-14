@@ -41,6 +41,7 @@ class Oyan:
         self.ask_box = AskBox()
         self.ask_box.submitted.connect(self.on_question)
         self.ask_box.submitted_for_area.connect(self.on_question_for_area)
+        self.ask_box.submitted_fresh.connect(self.on_question)
 
         self.region = RegionSelector()
         self.region.selected.connect(self.on_area_selected)
@@ -55,7 +56,9 @@ class Oyan:
         self.ai.failed.connect(self.on_ai_failed)
 
         self.question = None     # the question being worked on right now
-        self.screenshot = None   # the latest screenshot
+        self.screenshot = None   # the latest screenshot (its size and place on screen)
+        self.image_bytes = None  # that picture's content, kept in memory only
+        self.exchanges = []      # (question, answer) pairs about that picture
 
     def start(self):
         self.overlay.start()
@@ -116,6 +119,9 @@ class Oyan:
         if self.ask_box.isVisible():
             self.ask_box.close_box()
         self.overlay.wipe_board()
+        # A clean board is a clean start: forget the picture and the conversation.
+        self.image_bytes = None
+        self.exchanges = []
 
     def _ready_to_capture(self):
         """May we take a picture now? Explains why not, if not."""
@@ -143,8 +149,16 @@ class Oyan:
     # Privacy rule: a capture starts ONLY in the two functions below, and both
     # run only because the owner pressed Enter in the ask box.
 
-    def on_question(self, question):
-        """Enter: send the whole screen the cursor is on."""
+    def on_question(self, question, attached=False):
+        """Enter: send the whole screen the cursor is on.
+
+        Exception: Enter in the box under an answer is a FOLLOW-UP. It takes
+        no new picture; it asks again about the one already sent, together
+        with the earlier questions and answers.
+        """
+        if attached and self.image_bytes is not None and self.exchanges:
+            self.ask_follow_up(question)
+            return
         if not self._ready_to_capture():
             return
         self.ai.cancel()   # forget an earlier question that is still waiting
@@ -157,6 +171,12 @@ class Oyan:
         # app is back in front.
         self.overlay.set_board_visible(False)
         QTimer.singleShot(250, self.take_screenshot)
+
+    def ask_follow_up(self, question):
+        self.ai.cancel()
+        self.question = question
+        self.overlay.thinking = True
+        self.ai.ask(question, self.screenshot, self.image_bytes, earlier=self.exchanges)
 
     def on_question_for_area(self, question):
         """Shift+Enter: let the owner drag a box first; only that part is sent."""
@@ -195,13 +215,16 @@ class Oyan:
 
         # Send the question and the screenshot to the AI model. The buddy
         # pulses while we wait for the reply.
-        self.overlay.thinking = True
         try:
-            self.ai.ask(self.question, self.screenshot)
+            # Keep the picture in memory (for follow-up questions) and remove
+            # the working file; the "what left my Mac" log keeps its own copy.
+            self.image_bytes = self.screenshot.path.read_bytes()
         finally:
-            # The picture has been read into memory for sending, and a copy
-            # is in the "what left my Mac" log; remove this working file.
             capture.delete_screenshot()
+        self.exchanges = []   # a new picture starts a new conversation
+
+        self.overlay.thinking = True
+        self.ai.ask(self.question, self.screenshot, self.image_bytes)
 
     def on_answer(self, answer):
         """The AI replied. `answer` has the text and the point (see ai.py)."""
@@ -224,6 +247,7 @@ class Oyan:
                 drawn.append(marks.arrow(first, second))
 
         self.overlay.show_answer(answer.text, spot, drawn)
+        self.exchanges.append((self.question, answer.text))   # remember for follow-ups
 
     def on_ai_failed(self, message):
         self.overlay.thinking = False

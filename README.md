@@ -144,6 +144,13 @@ python -m oyan --unblock "App Name"   # remove one
 A bank's website inside a browser cannot be recognised this way; use
 Shift+Enter to send only part of the screen instead.
 
+**12. Follow-up questions.** Type in the box under an answer and press Enter:
+Oyan asks again about the same picture, and the AI is told the earlier
+questions and answers, so "and the other one?" works. No new screenshot is
+taken. Press Option+Enter there to look at the screen afresh instead, or
+Shift+Enter to pick an area. Wiping the board with Esc also forgets the
+picture and the conversation.
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT

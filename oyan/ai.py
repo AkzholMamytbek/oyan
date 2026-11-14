@@ -83,6 +83,7 @@ MARK_TAG = re.compile(r"\[(CIRCLE|UNDERLINE|ARROW):\s*(\d+)\s*,\s*(\d+)\s*,\s*(\
 # Matches any of our tags at all, so we can remove them from the text.
 ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW):[^\]]*\]")
 MAX_MARKS = 3
+MAX_REMEMBERED = 6     # how many earlier questions are sent along with a follow-up
 
 
 @dataclass
@@ -156,17 +157,23 @@ class AskAI(QObject):
     def is_busy(self):
         return self.process is not None or self.direct_waiting
 
-    def ask(self, question, screenshot):
-        """Send the question and screenshot. The picture file is read here,
-        straight away, so the caller may delete it as soon as this returns."""
-        image_bytes = screenshot.path.read_bytes()
+    def ask(self, question, screenshot, image_bytes, earlier=()):
+        """Send the question and the picture.
+
+        `image_bytes` is the picture file's content. `earlier` is a list of
+        (question, answer) pairs already exchanged about this same picture;
+        they are sent along so the AI remembers the conversation.
+        """
         # base64 writes the picture's bytes as plain letters and digits, which
         # is how pictures travel inside a text message to the AI.
         image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
-        text = (
-            f"The screenshot is {screenshot.width} x {screenshot.height} pixels.\n"
-            f"Question: {question}"
-        )
+        text = f"The screenshot is {screenshot.width} x {screenshot.height} pixels.\n"
+        if earlier:
+            text += "Earlier questions and answers about this same screenshot:\n"
+            for old_question, old_answer in earlier[-MAX_REMEMBERED:]:
+                text += f"Q: {old_question}\nA: {old_answer}\n"
+            text += "Now answer this follow-up question.\n"
+        text += f"Question: {question}"
 
         # Decide which way the request will go.
         api_key = settings.get_api_key()
