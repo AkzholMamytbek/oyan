@@ -48,7 +48,7 @@ INK = QColor(60, 40, 20)             # dark brown, like pencil
 
 
 class Note:
-    def __init__(self, text, anchor, screen_rect, has_point, avoid=()):
+    def __init__(self, text, anchor, screen_rect, has_point, avoid=(), clear_of=None):
         """
         text        - the answer to write
         anchor      - the spot on screen the answer is about (QPointF)
@@ -57,6 +57,8 @@ class Note:
                       pointer line is drawn and `anchor` is just "near here"
         avoid       - rectangles of notes already on the board; the new note
                       is moved so it does not cover them
+        clear_of    - a rectangle around this answer's own circles and arrows;
+                      the note is placed beside it, not on top of it
         """
         self.anchor = QPointF(anchor)
         self.has_point = has_point
@@ -64,6 +66,7 @@ class Note:
         self.progress = 0.0     # how many letters have been written so far
         self.wipe = 0.0         # 0 = untouched, 1 = completely wiped away
         self.show_hint = True   # only the newest note shows the reminder
+        self.marks = []         # circles, underlines and arrows drawn for this answer
 
         self.font = QFont(FONT_NAME, FONT_SIZE)
         self.metrics = QFontMetricsF(self.font)
@@ -76,7 +79,7 @@ class Note:
         text_width = max(self.metrics.horizontalAdvance(line) for line in self.lines)
         width = text_width + 2 * PADDING
         height = len(self.lines) * self.line_height + 2 * PADDING
-        self.box = self._place_box(width, height, screen_rect, avoid)
+        self.box = self._place_box(width, height, screen_rect, avoid, clear_of)
 
     # --- Layout ------------------------------------------------------------
 
@@ -96,7 +99,7 @@ class Note:
                 lines.append(current)
         return lines or ["..."]
 
-    def _place_box(self, width, height, screen_rect, avoid):
+    def _place_box(self, width, height, screen_rect, avoid, clear_of):
         """Put the paper to the right of the anchor, or to the left if there
         is no room, and never off the edge of the screen."""
         left_limit = screen_rect.left() + SCREEN_MARGIN
@@ -104,9 +107,11 @@ class Note:
         top_limit = screen_rect.top() + SCREEN_MARGIN
         bottom_limit = screen_rect.bottom() - SCREEN_MARGIN - height - HINT_HEIGHT - SPACE_FOR_ASK_BOX
 
-        x = self.anchor.x() + GAP
+        # Start just right of the spot, or right of the drawings if there are any.
+        keep_clear = clear_of if clear_of is not None else QRectF(self.anchor, self.anchor)
+        x = max(self.anchor.x() + GAP, keep_clear.right() + 10)
         if x > right_limit:
-            x = self.anchor.x() - GAP - width
+            x = min(self.anchor.x() - GAP, keep_clear.left() - 10) - width
         x = min(max(x, left_limit), right_limit)
         y = min(max(self.anchor.y() - height / 2, top_limit), bottom_limit)
         box = QRectF(x, y, width, height)

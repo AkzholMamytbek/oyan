@@ -5,8 +5,8 @@ You ask a question about what is on your screen; Oyan looks at a screenshot,
 glides to the relevant spot, and writes the answer right there in a
 handwriting style.
 
-> **Status: version 1 is being tested.** See [Updates](#updates) for what
-> works so far.
+> **Status: version 1 is done; version 2 is in progress.** See
+> [Updates](#updates) for what works so far.
 
 ## What makes Oyan different
 
@@ -102,6 +102,11 @@ Under each new answer a small box waits for your next question: click in it
 Press Esc and the dot wipes the board clean, scrubbing across each answer
 like an eraser. Old answers are hidden for the instant a new screenshot is
 taken, so they are never in the picture that is sent.
+
+**7. Circles, underlines and arrows.** The AI can now ask for a thing to be
+circled, a piece of text underlined, or an arrow drawn. The dot draws them
+live with a red marker, a little wobbly on purpose so they look hand-drawn,
+and they are wiped together with the answer they belong to.
 
 ## Credits
 

@@ -12,6 +12,7 @@ What the buddy is doing (its "mode")
 * "follow" - gliding after the mouse cursor. This is the normal mode.
 * "glide"  - flying along a curved path to a spot (to point, or to start writing).
 * "pause"  - sitting still on the spot for a moment, so you notice it.
+* "draw"   - drawing a circle, underline or arrow (see marks.py).
 * "write"  - riding along the answer as it is written (see handwriting.py).
 * "wipe"   - scrubbing across an answer like a board eraser, removing it.
 
@@ -62,6 +63,7 @@ GLIDE_CURVE = 0.25          # how much the path bends (0 = straight line)
 POINT_PAUSE_SECONDS = 0.35  # how long it rests on the spot before writing
 WRITE_SPEED = 38            # letters per second
 WIPE_SECONDS = 0.55         # how long the eraser takes to wipe one answer
+DRAW_SPEED = 520            # points of marker line drawn per second
 
 BUDDY_COLOR = QColor(255, 153, 51)     # warm orange
 BUDDY_OUTLINE = QColor(60, 40, 20)     # dark brown, like pencil
@@ -136,6 +138,8 @@ class ScreenOverlay(QWidget):
 
         if controller.notes_visible:
             for note in controller.notes:
+                for mark in note.marks:
+                    mark.paint(painter)
                 note.paint(painter)
 
         if not controller.buddy_visible:
@@ -169,6 +173,8 @@ class OverlayController:
         self.notes = []           # every answer on the board, oldest first
         self.notes_visible = True # False for a moment while a screenshot is taken
         self.writing = None       # the note being written right now, if any
+        self.to_draw = []         # marks still waiting to be drawn
+        self.drawing = None       # the mark being drawn right now, if any
         self.on_note_finished = None   # a function to call when writing ends
         self.glide = None         # details of the current flight (see _start_glide)
         self.pause_until = 0.0
@@ -219,44 +225,77 @@ class OverlayController:
 
     # --- Showing and removing an answer -------------------------------------
 
-    def show_answer(self, text, spot):
-        """Fly to `spot` and write `text` beside it.
+    def show_answer(self, text, spot, marks=()):
+        """Draw the `marks`, then fly to `spot` and write `text` beside it.
 
         `spot` is a global screen position (QPointF), or None if the AI did
         not point at anything; then the note is written near the buddy.
+        `marks` is a list of Mark objects (see marks.py); it may be empty.
         """
         # An unfinished wipe or older reminders should not linger.
         for old in self.notes:
             old.wipe = 0.0
             old.show_hint = False
             self._repaint(old.bounds())
+            for mark in old.marks:
+                mark.progress = 1.0   # finish any half-drawn mark at once
+                mark.fade = 1.0
+                self._repaint(mark.bounds())
 
         anchor = spot if spot is not None else self.buddy_pos
         screen = QGuiApplication.screenAt(anchor.toPoint()) or QGuiApplication.primaryScreen()
+        # One rectangle around all the marks, so the note can keep out of it.
+        marks_area = None
+        for mark in marks:
+            marks_area = mark.bounds() if marks_area is None else marks_area.united(mark.bounds())
+
         new_note = Note(
             text, anchor, screen.geometry(),
             has_point=spot is not None,
             avoid=[old.bounds() for old in self.notes],
+            clear_of=marks_area,
         )
         self.notes.append(new_note)
+        new_note.marks = list(marks)   # they belong to this answer and are wiped with it
         self.writing = new_note
+        self.spot = spot
 
-        if spot is not None:
-            self._start_glide(spot, then=self._arrived_at_spot)
+        self.to_draw = list(marks)
+        self.drawing = None
+        self._draw_next()
+
+    def _draw_next(self):
+        """Draw the next waiting mark; when none are left, go and write."""
+        if self.to_draw:
+            self.drawing = self.to_draw.pop(0)
+            self._start_glide(self.drawing.start_position(), then=self._start_drawing)
+        elif self.spot is not None:
+            self._start_glide(self.spot, then=self._arrived_at_spot)
         else:
             self._arrived_at_spot()
+
+    def _start_drawing(self):
+        self.mode = "draw"
 
     def dismiss(self):
         """Remove every answer at once, with no animation."""
         for old in self.notes:
             self._repaint(old.bounds())
+            for mark in old.marks:
+                self._repaint(mark.bounds())
         self.notes = []
         self.writing = None
+        self.to_draw = []
         self.mode = "follow"
 
     def wipe_board(self):
         """Wipe the answers away one by one, like cleaning a school board."""
         self.writing = None
+        self.to_draw = []
+        for note in self.notes:
+            note.visible = True       # in case it was wiped before it appeared
+            for mark in note.marks:
+                mark.progress = max(mark.progress, 0.0)
         self._wipe_next()
 
     def _wipe_next(self):
@@ -337,6 +376,14 @@ class OverlayController:
                 # Hop from the spot to where the first letter goes, then write.
                 self._start_glide(self.writing.pen_position(), then=self._start_writing)
 
+        elif self.mode == "draw":
+            mark = self.drawing
+            mark.progress += DRAW_SPEED * seconds_passed / mark.total_length
+            self.buddy_pos = mark.pen_position()
+            self._repaint(mark.bounds())
+            if mark.progress >= 1:
+                self._draw_next()
+
         elif self.mode == "write":
             note = self.writing
             note.progress += WRITE_SPEED * seconds_passed
@@ -351,6 +398,9 @@ class OverlayController:
         elif self.mode == "wipe":
             note = self.notes[0]
             note.wipe += seconds_passed / WIPE_SECONDS
+            for mark in note.marks:
+                mark.fade = max(1 - note.wipe, 0.0)   # its marks fade out with it
+                self._repaint(mark.bounds())
             self.buddy_pos = note.eraser_position()
             self._repaint(note.bounds())
             if note.wipe >= 1:

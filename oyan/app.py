@@ -3,6 +3,7 @@
 Each part lives in its own file and knows nothing about the others:
 * overlay.py  - the see-through window and the buddy dot
 * handwriting.py - the written answer
+* marks.py    - circles, underlines and arrows
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -12,10 +13,10 @@ This file decides what happens when: hotkey pressed -> open the box,
 question entered -> take a screenshot -> ask the AI model -> show the answer.
 """
 
-from PyQt6.QtCore import QPoint, QTimer
+from PyQt6.QtCore import QPoint, QRectF, QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
 
-from oyan import capture, hotkey
+from oyan import capture, hotkey, marks
 from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
@@ -152,7 +153,20 @@ class Oyan:
         if answer.point is not None:
             # Turn the position in the picture into a position on the screen.
             spot = self.screenshot.to_screen(*answer.point)
-        self.overlay.show_answer(answer.text, spot)
+
+        # Build the circles, underlines and arrows, also in screen positions.
+        drawn = []
+        for kind, x1, y1, x2, y2 in answer.marks:
+            first = self.screenshot.to_screen(x1, y1)
+            second = self.screenshot.to_screen(x2, y2)
+            if kind == "circle":
+                drawn.append(marks.circle(QRectF(first, second)))
+            elif kind == "underline":
+                drawn.append(marks.underline(QRectF(first, second)))
+            elif kind == "arrow":
+                drawn.append(marks.arrow(first, second))
+
+        self.overlay.show_answer(answer.text, spot, drawn)
 
     def on_ai_failed(self, message):
         self.overlay.thinking = False

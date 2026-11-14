@@ -25,11 +25,12 @@ The question and the picture are handed over through the program's "standard
 input" (the same channel a keyboard would use), not written on its command
 line, so other programs on the Mac cannot see them in the process list.
 
-Pointing
---------
+Pointing and drawing
+--------------------
 We ask the AI to end its reply with a tag like  [POINT:640,210:Save button]
-where the numbers are a pixel position in the screenshot. `parse_reply`
-cuts that tag out of the text and returns the position separately.
+where the numbers are a pixel position in the screenshot. It may also add
+drawing tags such as  [CIRCLE:600,190,680,230]. `parse_reply` cuts the tags
+out of the text and returns the positions separately.
 
 Waiting without freezing
 ------------------------
@@ -46,7 +47,7 @@ import os
 import re
 import shutil
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
 
@@ -62,34 +63,52 @@ SYSTEM_PROMPT = (
     "You are given a screenshot of the screen and a question about it. "
     "Look at the screenshot, then answer in one or two short plain sentences. "
     "No markdown, no lists. "
+    "All coordinates below are pixel coordinates in the screenshot, with the "
+    "origin at the top-left corner. "
     "End your answer with exactly one tag of the form [POINT:x,y:label], where x,y "
-    "are pixel coordinates in the screenshot (origin at the top-left corner) of the "
-    "thing your answer is about, and label is one to three words naming it. "
-    "If nothing on the screen is relevant, end with [POINT:none] instead."
+    "is the thing your answer is about and label is one to three words naming it. "
+    "If nothing on the screen is relevant, end with [POINT:none] instead. "
+    "Before the POINT tag you may add up to three drawing tags, only where they "
+    "truly help: [CIRCLE:x1,y1,x2,y2] draws a circle around the box with those "
+    "corners (use it for a button, icon or field); [UNDERLINE:x1,y1,x2,y2] "
+    "underlines the text inside that box; [ARROW:x1,y1,x2,y2] draws an arrow "
+    "from the first point to the second (use it to show a direction or to "
+    "connect two things). Make boxes fit the thing tightly."
 )
 
 # Matches [POINT:123,456:some label]  (the label part is optional).
 POINT_TAG = re.compile(r"\[POINT:\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]")
-# Matches any [POINT:...] tag at all, so we can remove it from the text.
-ANY_POINT_TAG = re.compile(r"\[POINT:[^\]]*\]")
+# Matches [CIRCLE:1,2,3,4], [UNDERLINE:1,2,3,4] and [ARROW:1,2,3,4].
+MARK_TAG = re.compile(r"\[(CIRCLE|UNDERLINE|ARROW):\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]")
+# Matches any of our tags at all, so we can remove them from the text.
+ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW):[^\]]*\]")
+MAX_MARKS = 3
 
 
 @dataclass
 class Answer:
-    text: str             # the answer with the tag removed
+    text: str             # the answer with the tags removed
     point: tuple = None   # (x, y) in screenshot pixels, or None
     label: str = ""       # short name of the thing pointed at
+    marks: list = field(default_factory=list)   # e.g. [("circle", x1, y1, x2, y2)]
 
 
 def parse_reply(reply):
-    """Split the AI's reply into the answer text and the point."""
+    """Split the AI's reply into the answer text, the point and the marks."""
     point, label = None, ""
     match = POINT_TAG.search(reply)
     if match:
         point = (int(match.group(1)), int(match.group(2)))
         label = (match.group(3) or "").strip()
-    text = ANY_POINT_TAG.sub("", reply).strip()
-    return Answer(text=text, point=point, label=label)
+
+    marks = []
+    for match in MARK_TAG.finditer(reply):
+        kind = match.group(1).lower()                           # "circle", ...
+        numbers = [int(match.group(i)) for i in (2, 3, 4, 5)]   # x1, y1, x2, y2
+        marks.append((kind, *numbers))
+
+    text = ANY_TAG.sub("", reply).strip()
+    return Answer(text=text, point=point, label=label, marks=marks[:MAX_MARKS])
 
 
 def find_command():
