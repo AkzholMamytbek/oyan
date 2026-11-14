@@ -26,11 +26,15 @@ from AppKit import (
 )
 from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
 
-# --- The hotkey: Control + Option + Space ---------------------------------
+# --- The hotkey: Control + Option + O (O for Oyan) ------------------------
+# It used to be Control + Option + Space, but macOS itself uses that one for
+# "select the next keyboard layout". Oyan only listens to keys and cannot
+# stop macOS from acting on them too, so every press also switched the
+# typing language. Control + Option + O is not used by macOS.
 
-HOTKEY_KEY_CODE = 49  # macOS's number for the Space bar
+HOTKEY_KEY_CODE = 31  # macOS's number for the O key
 HOTKEY_MODIFIERS = NSEventModifierFlagControl | NSEventModifierFlagOption
-HOTKEY_NAME = "Control + Option + Space"
+HOTKEY_NAME = "Control + Option + O"
 ESCAPE_KEY_CODE = 53  # macOS's number for the Esc key
 
 # --- The voice hotkey: Control + Option + V (same modifier keys) ----------
@@ -117,7 +121,7 @@ class GlobalHotkey:
     def _on_local_key(self, event):
         # A local monitor must hand the event back so the app still receives
         # it. Returning None instead "swallows" the key press, which is what
-        # we want for the hotkey itself (no stray space typed in the box).
+        # we want for the hotkey itself (no stray letter typed in the box).
         if self._is_hotkey(event):
             if not event.isARepeat():
                 self.on_pressed()

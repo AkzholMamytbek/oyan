@@ -78,7 +78,7 @@ through it.
 
 ![Oyan as an orange dot next to the cursor](docs/oyan-dot.png)
 
-**2. The hotkey and the ask box.** Press **Control + Option + Space** in any
+**2. The hotkey and the ask box.** Press **Control + Option + O** in any
 app and a small text box opens next to the cursor. Enter sends the question,
 Esc closes the box, and you are returned to the app you were in.
 
