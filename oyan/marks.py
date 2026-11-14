@@ -26,6 +26,7 @@ MARKER = QColor(226, 68, 44)   # red-orange, like a board marker
 MARKER_WIDTH = 3.2
 CIRCLE_PADDING = 8             # how far outside the thing the circle is drawn
 ARROW_HEAD = 14                # length of the arrow head's sides
+SMOOTH_FROM_POINTS = 7         # pen strokes with at least this many points are rounded
 
 
 class Mark:
@@ -141,6 +142,30 @@ def underline(rect):
         x = rect.left() - 3 + (rect.width() + 6) * t
         sag = 2.0 * math.sin(t * math.pi) + 0.8 * math.sin(t * 9)   # dips in the middle
         points.append(QPointF(x, y + sag))
+    return Mark([points])
+
+
+def freehand(points):
+    """A pen stroke through the given points, with the corners rounded off.
+
+    The rounding is "Chaikin's corner cutting": replace every corner by two
+    points a quarter of the way along the lines on either side of it. Doing
+    that twice turns a jagged line into a smooth, hand-like curve.
+    """
+    points = [QPointF(p) for p in points]
+    closed = len(points) > 3 and (points[0] - points[-1]).manhattanLength() < 4
+    # A stroke with only a few points is meant to have sharp corners (the
+    # walls of a house, say), so only strokes with many points are rounded.
+    rounds = 2 if len(points) >= SMOOTH_FROM_POINTS else 0
+    for _ in range(rounds):
+        smoother = [points[0]]
+        for a, b in zip(points, points[1:]):
+            smoother.append(a * 0.75 + b * 0.25)
+            smoother.append(a * 0.25 + b * 0.75)
+        smoother.append(points[-1])
+        points = smoother
+    if closed:
+        points.append(QPointF(points[0]))   # make sure a closed shape really closes
     return Mark([points])
 
 

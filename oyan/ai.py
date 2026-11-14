@@ -74,6 +74,16 @@ SYSTEM_PROMPT = (
     "underlines the text inside that box; [ARROW:x1,y1,x2,y2] draws an arrow "
     "from the first point to the second (use it to show a direction or to "
     "connect two things). Make boxes fit the thing tightly. "
+    "If the user asks you to draw or sketch something, really draw it, with "
+    "pen strokes: each [DRAW:x,y x,y x,y ...] tag is one stroke, a list of "
+    "points separated by spaces that the pen passes through without lifting. "
+    "Use ten or more points for a curve so it looks smooth, and [CIRCLE:...] "
+    "for round outlines. Draw every part needed to recognise the thing (a face "
+    "needs its outline, two eyes, a nose and a mouth; a house needs walls, a "
+    "roof, a door and a window), using up to fourteen drawing tags. Make the "
+    "drawing 200 to 350 pixels across and place it in an emptier part of the "
+    "screenshot. Then add one short sentence and put the POINT tag just beside "
+    "the drawing, not on it. "
     "Exception, for how-to questions: if doing what is asked needs two or more "
     "separate clicks or actions, do not write sentences and do not use the tags "
     "above. Reply only with step tags, in order, at most six: "
@@ -87,12 +97,15 @@ SYSTEM_PROMPT = (
 POINT_TAG = re.compile(r"\[POINT:\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]")
 # Matches [CIRCLE:1,2,3,4], [UNDERLINE:1,2,3,4] and [ARROW:1,2,3,4].
 MARK_TAG = re.compile(r"\[(CIRCLE|UNDERLINE|ARROW):\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]")
+# Matches [DRAW:10,20 30,40 50,60]: one freehand pen stroke through those points.
+DRAW_TAG = re.compile(r"\[DRAW:([\d\s,]+)\]")
+PAIR = re.compile(r"(\d+)\s*,\s*(\d+)")
 # Matches [STEP:120,45:Open the File menu] and [STEP:none:Choose Export].
 STEP_TAG = re.compile(r"\[STEP:\s*(?:(\d+)\s*,\s*(\d+)|none)\s*:([^\]]*)\]")
 # Matches any of our tags at all, so we can remove them from the text.
-ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW|STEP):[^\]]*\]")
+ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW|DRAW|STEP):[^\]]*\]")
 MAX_STEPS = 6
-MAX_MARKS = 3
+MAX_MARKS = 14        # the most circles, lines, arrows and pen strokes in one answer
 MAX_REMEMBERED = 6     # how many earlier questions are sent along with a follow-up
 
 
@@ -101,7 +114,8 @@ class Answer:
     text: str             # the answer with the tags removed
     point: tuple = None   # (x, y) in screenshot pixels, or None
     label: str = ""       # short name of the thing pointed at
-    marks: list = field(default_factory=list)   # e.g. [("circle", x1, y1, x2, y2)]
+    # e.g. [("circle", x1, y1, x2, y2), ("draw", [(x, y), (x, y), ...])], in drawing order
+    marks: list = field(default_factory=list)
     steps: list = field(default_factory=list)   # e.g. [((x, y), "Open File"), (None, "Choose Export")]
 
 
@@ -113,11 +127,18 @@ def parse_reply(reply):
         point = (int(match.group(1)), int(match.group(2)))
         label = (match.group(3) or "").strip()
 
-    marks = []
+    # Collect the drawing tags together with where each one sits in the
+    # reply, so that they can be drawn in the order the AI wrote them.
+    found = []
     for match in MARK_TAG.finditer(reply):
         kind = match.group(1).lower()                           # "circle", ...
         numbers = [int(match.group(i)) for i in (2, 3, 4, 5)]   # x1, y1, x2, y2
-        marks.append((kind, *numbers))
+        found.append((match.start(), (kind, *numbers)))
+    for match in DRAW_TAG.finditer(reply):
+        points = [(int(x), int(y)) for x, y in PAIR.findall(match.group(1))]
+        if len(points) >= 2:
+            found.append((match.start(), ("draw", points)))
+    marks = [mark for _, mark in sorted(found, key=lambda item: item[0])]
 
     steps = []
     for match in STEP_TAG.finditer(reply):

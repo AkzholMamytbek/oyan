@@ -167,6 +167,11 @@ next step. Esc stops. All steps are planned from the one picture you sent;
 Oyan does not take new screenshots as you click, so a step hidden inside a
 closed menu is given in words only.
 
+**15. Freehand drawing.** Ask Oyan to draw something ("draw a cat") and it
+sketches it on your screen with real pen strokes, part by part, instead of
+just a circle. The idle doodles are also sturdier: a small wobble of the
+mouse no longer stops one half-drawn.
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT

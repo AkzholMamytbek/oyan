@@ -258,7 +258,13 @@ class Oyan:
 
         # Build the circles, underlines and arrows, also in screen positions.
         drawn = []
-        for kind, x1, y1, x2, y2 in answer.marks:
+        for kind, *numbers in answer.marks:
+            if kind == "draw":
+                # A freehand pen stroke: a list of points.
+                points = [self.screenshot.to_screen(x, y) for x, y in numbers[0]]
+                drawn.append(marks.freehand(points))
+                continue
+            x1, y1, x2, y2 = numbers
             first = self.screenshot.to_screen(x1, y1)
             second = self.screenshot.to_screen(x2, y2)
             if kind == "circle":

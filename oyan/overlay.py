@@ -74,7 +74,8 @@ IDLE_SECONDS = 30           # mouse still for this long -> draw a doodle
 DOODLE_PAUSE_SECONDS = 45   # wait at least this long between doodles
 DOODLE_SIZE = 84            # how big a doodle is, in points
 DOODLE_MARGIN = 36          # distance from the corner of the screen
-DOODLE_SPEED = 260          # points of line drawn per second (unhurried)
+DOODLE_SPEED = 380          # points of line drawn per second (unhurried)
+DOODLE_CANCEL_DISTANCE = 45 # the mouse must move this far to interrupt a doodle
 ADMIRE_SECONDS = 8          # how long a finished doodle stays
 DOODLE_FADE_SECONDS = 0.8   # how long it takes to fade away
 
@@ -200,6 +201,7 @@ class OverlayController:
         self.doodle_name = None            # which one it was, to avoid repeats
         self.doodle_fading_since = None    # when it started to fade away
         self.last_cursor = QCursor.pos()
+        self.doodle_cursor = QCursor.pos()
         self.still_since = self.start_time # when the mouse last stopped moving
         self.next_doodle_at = self.start_time
         self.may_doodle = lambda: True     # the app can say "not now" (see app.py)
@@ -386,6 +388,7 @@ class OverlayController:
             area.bottom() - DOODLE_MARGIN - DOODLE_SIZE,
         )
         self.doodle, self.doodle_name = make_doodle(corner, DOODLE_SIZE, previous=self.doodle_name)
+        self.doodle_cursor = QCursor.pos()   # where the mouse was when we began
         self.doodle_fading_since = None
         self._start_glide(self.doodle.start_position(), then=self._start_doodling)
 
@@ -416,8 +419,11 @@ class OverlayController:
             self.last_cursor = cursor
             self.still_since = now
 
+        # A doodle is only interrupted when the mouse really moves away. A
+        # small wobble (a hand resting on the mouse) must not stop it half-drawn.
         busy_doodling = self.doodle is not None and self.doodle_fading_since is None
-        if busy_doodling and moved:
+        moved_away = (cursor - self.doodle_cursor).manhattanLength() > DOODLE_CANCEL_DISTANCE
+        if busy_doodling and moved_away:
             self._stop_doodling(now)          # you are back: return to the cursor
 
         elif (
