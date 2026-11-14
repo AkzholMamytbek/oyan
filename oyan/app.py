@@ -11,7 +11,7 @@ Each part lives in its own file and knows nothing about the others:
 * blocked.py  - apps Oyan refuses to photograph
 * history.py  - past questions and answers, searchable
 * speak.py    - reading answers aloud with the Mac's own voice
-* sketch.py   - your own pen: Option + D and drag to draw on the screen
+* sketch.py   - your own pen: hold Control + Option and drag to draw on the screen
 * listen.py   - turning your spoken question into text, on this Mac
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
@@ -24,6 +24,7 @@ question entered -> take a screenshot -> ask the AI model -> show the answer.
 """
 
 import math
+import time
 
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
@@ -40,6 +41,7 @@ from oyan.speak import Speaker
 
 NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
 CAPTURE_DELAY_MS = 60    # a short pause before the picture, so your app is back in front
+SHORTEST_HOLD = 0.3      # holding the keys for less than this (seconds) is a slip, not a question
 STEP_CLICK_RADIUS = 90   # a click this close to a step's spot counts as doing the step
 STEP_CIRCLE = 16         # half the size of the circle drawn around a step's spot
 
@@ -68,12 +70,14 @@ class Oyan:
         self.ask_box.escaped.connect(self.on_escape)
 
         self.hotkey = hotkey.GlobalHotkey(
-            self.on_hotkey, self.on_escape, self.on_click, self.on_voice_hotkey, self.on_pen,
+            self.on_hotkey, self.on_escape, self.on_click, self.on_hold, self.cancel_hold,
         )
         self.draw_layer = DrawLayer()
-        self.draw_layer.finished.connect(self.on_drawn)
+        self.hold_began = 0.0       # when Control + Option went down
+        self.hold_strokes = []      # what was drawn during the current hold
         self.strokes_sent = False   # have the owner's pen strokes been in a screenshot yet?
         self.listener = None             # the microphone part, created on first use
+        self.voice_unavailable = False   # True once we know voice cannot be used
         self.next_question_by_voice = False
 
         # Step-by-step mode (see start_steps).
@@ -106,7 +110,7 @@ class Oyan:
 
         if keys_work and hotkey.has_permission(ask=True):
             print(f"Oyan is running. Press {hotkey.HOTKEY_NAME} to ask a question.")
-            print(f"To draw on the screen, hold {hotkey.PEN_HOTKEY_NAME} and drag the mouse.")
+            print(f"Hold {hotkey.HOLD_NAME} to talk; drag the mouse while holding to draw. Let go to send.")
         else:
             hotkey.has_permission(ask=True)   # lets macOS offer to open System Settings
             print(
@@ -115,7 +119,6 @@ class Oyan:
                 "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
                 "  3. Quit Oyan with Ctrl+C and start it again."
             )
-        print(f"To ask by voice, press {hotkey.VOICE_HOTKEY_NAME} and speak; Oyan stops listening when you go quiet.")
         print("To see everything Oyan has sent:  python -m oyan --log")
         print("To search past questions:         python -m oyan --history")
         print("Press Ctrl+C here to quit.")
@@ -139,26 +142,93 @@ class Oyan:
         if not self.ask_box.is_typing():   # do not disturb if you are typing
             self.ask_box.show_attached(self._place_under(note))
 
-    # --- Your own pen ----------------------------------------------------------
-    # Hold Option + D and drag to draw. Let go, and the ask box opens
-    # next to your drawing. The strokes stay on screen for that one question,
-    # so they are in the screenshot and the AI sees what you marked.
+    # --- Talk and draw: hold Control + Option ---------------------------------
+    # While both keys are held, Oyan listens through the microphone AND you
+    # can draw on the screen by dragging the mouse. Letting go means "I have
+    # finished":
+    #   you spoke (with or without drawing) -> the question is sent at once;
+    #   you only drew                       -> the ask box opens by the drawing;
+    #   neither (a slip of the fingers)     -> nothing happens.
 
-    def on_pen(self, down):
+    def on_hold(self, down):
         if down:
-            if self.ask_box.is_typing():
-                return
-            if self.strokes_sent:
-                self.overlay.set_user_strokes([])   # the old drawing has done its job
-                self.strokes_sent = False
-            screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-            self.draw_layer.begin(screen)
+            self.begin_hold()
         else:
-            self.draw_layer.end()
+            self.end_hold()
 
-    def on_drawn(self, strokes):
-        self.overlay.set_user_strokes(self.overlay.user_strokes + strokes)
-        # Open the ask box just below the lowest point of the drawing.
+    def begin_hold(self):
+        if self.ask_box.is_typing():
+            return
+        self.hold_began = time.monotonic()
+        self.hold_strokes = []
+        self.speaker.stop()
+        if self.ask_box.isVisible():
+            self.ask_box.close_box()
+        if self.strokes_sent:
+            self.overlay.set_user_strokes([])   # the old drawing has done its job
+            self.strokes_sent = False
+
+        # The pen: a layer that catches the mouse while the keys are held.
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        self.draw_layer.begin(screen)
+
+        # The microphone (if voice is set up; drawing works without it).
+        listener = self._get_listener()
+        if listener is not None:
+            self.ai.prepare()               # get the AI program ready while you talk
+            self.overlay.listening = True   # the buddy turns red: the microphone is on
+            listener.start()
+
+    def end_hold(self):
+        self.hold_strokes = self.draw_layer.end()
+        if self.hold_strokes:
+            self.overlay.set_user_strokes(self.overlay.user_strokes + self.hold_strokes)
+        self.overlay.listening = False
+
+        listening = self.listener is not None and self.listener.is_listening()
+        too_short = time.monotonic() - self.hold_began < SHORTEST_HOLD
+        if listening and not too_short:
+            self.listener.stop()        # works out the words; on_heard is called with them
+        else:
+            if listening:
+                self.listener.cancel()  # a slip of the fingers: throw the recording away
+            self.on_heard("")
+
+    def cancel_hold(self):
+        """Another key was pressed during the hold: it was not meant for Oyan."""
+        self.draw_layer.end()
+        self.hold_strokes = []
+        self.overlay.listening = False
+        if self.listener is not None and self.listener.is_listening():
+            self.listener.cancel()
+
+    def _get_listener(self):
+        """The microphone part, created the first time it is needed.
+        Returns None (and says why, once) if voice cannot be used."""
+        if self.listener is not None:
+            return self.listener
+        if self.voice_unavailable:
+            return None
+        try:
+            # Loaded only now, because these packages are big and would
+            # slow down every start of Oyan otherwise.
+            from oyan import listen
+        except ImportError:
+            self.voice_unavailable = True
+            print("Voice needs extra packages. Run: pip install -r requirements.txt")
+            return None
+        if not listen.is_set_up():
+            self.voice_unavailable = True
+            print("Voice is not set up yet. Run once: python -m oyan --setup-voice")
+            return None
+        self.listener = listen.Listener()
+        self.listener.heard.connect(self.on_heard)
+        self.listener.failed.connect(self.on_voice_failed)
+        self.listener.stopped.connect(self.on_listening_stopped)
+        return self.listener
+
+    def _open_box_by_drawing(self, strokes):
+        """Open the ask box just below the lowest point of a drawing."""
         points = [point for stroke in strokes for point in stroke]
         lowest = max(points, key=lambda point: point.y())
         self.next_question_by_voice = False
@@ -196,41 +266,6 @@ class Oyan:
         else:
             self.ask_box.open_near(QCursor.pos())
 
-    # --- Asking by voice -----------------------------------------------------
-    # Press the voice key once and speak. When you go quiet for about a
-    # second, Oyan stops listening by itself, turns your words into text on
-    # this Mac, and sends the question at once with a fresh screenshot,
-    # exactly as if you had typed it and pressed Enter.
-
-    def on_voice_hotkey(self):
-        if self.listener is None:
-            try:
-                # Loaded only now, because these packages are big and would
-                # slow down every start of Oyan otherwise.
-                from oyan import listen
-            except ImportError:
-                self.overlay.show_answer("Voice needs extra packages. Run: pip install -r requirements.txt", None)
-                return
-            if not listen.is_set_up():
-                self.overlay.show_answer("Voice is not set up yet. Run once: python -m oyan --setup-voice", None)
-                return
-            self.listener = listen.Listener()
-            self.listener.heard.connect(self.on_heard)
-            self.listener.failed.connect(self.on_voice_failed)
-            self.listener.stopped.connect(self.on_listening_stopped)
-
-        if self.listener.is_listening():
-            # A second press stops the recording at once. (Normally you do
-            # not need it: Oyan stops by itself when you go quiet.)
-            self.listener.stop()
-        else:
-            self.speaker.stop()
-            if self.ask_box.isVisible():
-                self.ask_box.close_box()
-            self.ai.prepare()               # get the AI program ready while you talk
-            self.overlay.listening = True   # the buddy turns red: the microphone is on
-            self.listener.start()
-
     def on_listening_stopped(self):
         """The microphone is off; the words are being worked out.
 
@@ -246,11 +281,15 @@ class Oyan:
             self.picture_is_ready = self.take_picture()
 
     def on_heard(self, text):
+        """Called when a hold has ended, with the words that were spoken
+        ("" if there were none)."""
         self.overlay.thinking = False
+        strokes, self.hold_strokes = self.hold_strokes, []
         if not text:
             self.picture_is_ready = False
             self.image_bytes = None   # throw the unused picture away
-            self.overlay.show_answer("I did not catch any words. Try again a little closer to the microphone.", None)
+            if strokes:
+                self._open_box_by_drawing(strokes)   # you only drew: type the question
             return
         # Send it straight away: speaking the question is the whole request.
         self.next_question_by_voice = True
@@ -265,10 +304,6 @@ class Oyan:
 
     def on_escape(self):
         """Esc: stop waiting for the AI and wipe the board clean."""
-        if self.listener is not None and self.listener.is_listening():
-            self.listener.cancel()          # throw the recording away
-            self.overlay.listening = False
-            return
         if self.ai.is_busy():
             self.ai.cancel()
             self.overlay.thinking = False

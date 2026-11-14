@@ -1,20 +1,21 @@
-"""Your own pen: hold Option + D and drag to draw on the screen.
+"""Your own pen: hold Control + Option and drag the mouse to draw on the screen.
 
-Circle a piece of code, underline a word, draw an arrow at a button. When
-you let go of the keys, the ask box opens next to what you drew. Your marks
-are then part of the screenshot, so the AI sees exactly what you mean.
+Circle a piece of code, underline a word, draw an arrow at a button. Your
+marks become part of the screenshot, so the AI sees exactly what you mean.
+(Holding the same two keys also makes Oyan listen, so you can point and ask
+at the same time. See app.py.)
 
 How it works
 ------------
 Oyan's normal overlay lets every click pass through to the app underneath,
-so it cannot be drawn on. While Option + D are held down, this second
+so it cannot be drawn on. While Control + Option are held down, this second
 see-through window is put on top instead, and it DOES catch the mouse. Let
-go of the keys and it disappears again, handing the finished strokes over.
+go of the keys and it disappears again, handing over the finished strokes.
 
 It never takes the keyboard, so the app you are working in stays active.
 """
 
-from PyQt6.QtCore import QPointF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QWidget
 
@@ -43,10 +44,6 @@ def paint_strokes(painter, strokes):
 
 
 class DrawLayer(QWidget):
-    # Carries the finished strokes: a list of strokes, each a list of
-    # positions (QPointF) on the desktop.
-    finished = pyqtSignal(list)
-
     def __init__(self):
         super().__init__()
         self.strokes = []     # strokes drawn so far, in positions inside this window
@@ -64,7 +61,7 @@ class DrawLayer(QWidget):
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     def begin(self, screen):
-        """Option + D went down: cover this monitor and wait for strokes."""
+        """The keys went down: cover this monitor and wait for strokes."""
         self.strokes = []
         self.current = None
         self.setGeometry(screen.geometry())
@@ -72,9 +69,13 @@ class DrawLayer(QWidget):
         show_on_every_desktop(self)
 
     def end(self):
-        """The keys were released: hide, and hand over what was drawn."""
+        """The keys were released: hide, and return what was drawn.
+
+        The result is a list of strokes, each a list of positions (QPointF)
+        on the desktop. It is empty if nothing was drawn.
+        """
         if not self.isVisible():
-            return
+            return []
         if self.current is not None:
             self.strokes.append(self.current)
             self.current = None
@@ -87,11 +88,10 @@ class DrawLayer(QWidget):
             if len(stroke) > 1 and stroke_path(stroke).length() >= SMALLEST_STROKE
         ]
         self.strokes = []
-        if real:
-            self.finished.emit(real)
+        return real
 
     # --- The mouse -----------------------------------------------------------
-    # We accept any mouse button.
+    # macOS treats Control + click as a right-click, so we accept any button.
 
     def mousePressEvent(self, event):
         self.current = [event.position()]

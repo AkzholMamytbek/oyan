@@ -1,12 +1,12 @@
 """Oyan's keys: they work in any app.
 
-    Option + A        Ask   (open the ask box)
-    Option + S        Speak (start listening; press again to stop)
-    Option + D        Draw  (hold both keys and drag the mouse)
-    Esc               wipe the board / stop
+    Option + A              Ask by typing (open the ask box)
+    hold Control + Option   Talk and draw: Oyan listens for as long as you
+                            hold both keys, and you can draw by dragging the
+                            mouse. Let go and your question is sent.
+    Esc                     wipe the board / stop
 
-A, S and D sit next to each other under the left hand, with Option under
-the thumb.
+Control and Option sit next to each other at the bottom left of the keyboard.
 
 How it works
 ------------
@@ -20,6 +20,10 @@ macOS runs every key press through before any app receives it. Our function
 That second answer is why Option + A opens Oyan WITHOUT also typing "å" into
 the app you are working in. (An earlier version could only listen to keys,
 not take them, which is why it needed awkward three-key combinations.)
+
+Holding Control + Option is noticed differently: those two are "modifier"
+keys, and macOS reports them with a "flags changed" event whenever one goes
+down or comes up. We simply watch for the moment exactly those two are held.
 
 Because every key on the Mac passes through `_on_key`, it must be quick. It
 only decides "mine or not" and asks Qt to run the real work a moment later
@@ -62,17 +66,15 @@ from Quartz import (
 
 # macOS's numbers for the keys we use.
 KEY_A = 0
-KEY_S = 1
-KEY_D = 2
 KEY_ESCAPE = 53
 
 HOTKEY_NAME = "Option + A"
-VOICE_HOTKEY_NAME = "Option + S"
-PEN_HOTKEY_NAME = "Option + D"
+HOLD_NAME = "Control + Option"
 
 # macOS calls the Option key "Alternate". When comparing, look only at these
 # four modifier keys (and ignore Caps Lock and the like).
 OPTION = kCGEventFlagMaskAlternate
+HOLD = kCGEventFlagMaskControl | kCGEventFlagMaskAlternate
 ALL_MODIFIERS = kCGEventFlagMaskControl | kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift
 
 
@@ -88,21 +90,23 @@ def has_permission(ask=False):
 class GlobalHotkey:
     """Watches the keyboard and calls the right function for each of Oyan's keys.
 
-    on_pressed()   - Option + A
-    on_voice()     - Option + S
-    on_pen(down)   - Option + D went down (True) or was let go (False)
-    on_escape()    - Esc (the other app still receives its Esc as usual)
-    on_click()     - the mouse button went down in another app; used by the
-                     step-by-step mode to notice that you did a step
+    on_pressed()        - Option + A
+    on_hold(True)       - Control + Option have just been pressed together
+    on_hold(False)      - ...and have been let go: "I have finished"
+    on_hold_cancelled() - another key was pressed while they were held, so it
+                          was a keyboard shortcut for some app, not for Oyan
+    on_escape()         - Esc (the other app still receives its Esc as usual)
+    on_click()          - the mouse button went down in another app; used by
+                          the step-by-step mode to notice that you did a step
     """
 
-    def __init__(self, on_pressed, on_escape, on_click=None, on_voice=None, on_pen=None):
+    def __init__(self, on_pressed, on_escape, on_click=None, on_hold=None, on_hold_cancelled=None):
         self.on_pressed = on_pressed
         self.on_escape = on_escape
         self.on_click = on_click
-        self.on_voice = on_voice
-        self.on_pen = on_pen
-        self.pen_is_down = False
+        self.on_hold = on_hold
+        self.on_hold_cancelled = on_hold_cancelled
+        self.holding = False
         self.tap = None
         self._click_monitor = None
 
@@ -148,11 +152,6 @@ class GlobalHotkey:
         if function is not None:
             QTimer.singleShot(0, lambda: function(*arguments))
 
-    def _set_pen(self, down):
-        if down != self.pen_is_down:
-            self.pen_is_down = down
-            self._later(self.on_pen, down)
-
     def _on_key(self, proxy, event_type, event, _):
         """Called by macOS for every key event. Return None to take the key."""
         try:
@@ -165,39 +164,40 @@ class GlobalHotkey:
                 return event
 
             held = CGEventGetFlags(event) & ALL_MODIFIERS
-            only_option = held == OPTION
 
             if event_type == kCGEventFlagsChanged:
-                # Letting go of Option while drawing ends the drawing too.
-                if self.pen_is_down and not only_option:
-                    self._set_pen(False)
+                # A modifier key went down or came up. Are exactly Control and
+                # Option held now?
+                holding_now = held == HOLD
+                if holding_now and not self.holding:
+                    self.holding = True
+                    self._later(self.on_hold, True)
+                elif self.holding and not holding_now:
+                    self.holding = False
+                    self._later(self.on_hold, False)
                 return event
 
             key = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             repeat = bool(CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat))
 
             if event_type == kCGEventKeyUp:
-                if key == KEY_D and self.pen_is_down:
-                    self._set_pen(False)
-                    return None
-                if only_option and key in (KEY_A, KEY_S, KEY_D):
-                    return None        # the key-up belonging to a key we took
+                if held == OPTION and key == KEY_A:
+                    return None        # the key-up belonging to the key we took
                 return event
 
             # From here on: a key went down.
+            if self.holding:
+                # Control + Option + another key is some app's shortcut (or
+                # Esc, to give up). Either way this hold is not a question.
+                self.holding = False
+                self._later(self.on_hold_cancelled)
+                return event
             if key == KEY_ESCAPE and held == 0:
                 self._later(self.on_escape)
                 return event           # Esc is shared: the app gets it as well
-            if only_option and key == KEY_A:
+            if held == OPTION and key == KEY_A:
                 if not repeat:         # holding the key down must not fire again and again
                     self._later(self.on_pressed)
-                return None
-            if only_option and key == KEY_S:
-                if not repeat:
-                    self._later(self.on_voice)
-                return None
-            if only_option and key == KEY_D:
-                self._set_pen(True)
                 return None
             return event
         except Exception:

@@ -180,12 +180,11 @@ into macOS, entirely on your Mac. It is off by default; turn it on with
 `python -m oyan --voice on` (or `auto` to speak only when you asked by
 voice). Esc stops it mid-sentence.
 
-**17. Asking by voice.** Press **Option + S** once and speak. Oyan turns red
-while the microphone is on. When you have been quiet for about a second it
-stops listening by itself; a speech-recognition model (Whisper) running on
-your Mac turns what you said into text, and the question is sent at once with
-a fresh screenshot. Pressing Option + S again stops it early, Esc cancels.
-Your voice never leaves the Mac. One-time setup:
+**17. Asking by voice.** Hold **Control + Option** and speak; let go when
+you have finished. Oyan turns red while the microphone is on. A
+speech-recognition model (Whisper) running on your Mac turns what you said
+into text, and the question is sent at once with a fresh screenshot. Your
+voice never leaves the Mac. One-time setup:
 
 ```bash
 python -m oyan --setup-voice    # downloads the model, about 460 MB, once
@@ -202,11 +201,11 @@ An answer takes about four seconds from Enter to fully written.
 the tip of a mouse arrow, in burgundy or royal green. Type `/green` or `/burgundy` in the ask
 box to switch; the choice is remembered.
 
-**20. Your own pen.** Hold **Option + D** and drag to draw on the
-screen: circle a piece of code, underline a word, point an arrow. Let go of
-the keys and the ask box opens next to your drawing. Your blue marks are in
-the screenshot, so the AI sees exactly what you mean. They disappear when
-the answer arrives.
+**20. Your own pen.** While holding **Control + Option**, drag the mouse to
+draw on the screen: circle a piece of code, underline a word, point an arrow.
+Your blue marks are in the screenshot, so the AI sees exactly what you mean.
+Speak while you draw and the question goes out when you let go; draw without
+speaking and the ask box opens next to your drawing instead.
 
 **21. A tutor, not an answer machine.** Show Oyan an exercise (maths,
 physics, code) and ask for help: it gives one concrete next step for that
@@ -216,10 +215,10 @@ solution" when you want the whole thing. For problems that are easier to see
 than to read, it draws a small labelled sketch, such as two cars on a road
 with their speeds and the gap between them.
 
-**22. Easy keys.** Three neighbouring keys under the left hand, each with
-Option: **Option + A** to Ask, **Option + S** to Speak, hold **Option + D**
-to Draw. Oyan now takes these keys for itself, so they no longer type odd
-characters into the app you are in or switch the keyboard language.
+**22. Easy keys.** Two things to remember. **Option + A** to Ask by typing.
+Hold **Control + Option** (two neighbouring keys at the bottom left) to talk
+and draw at the same time, and let go to send. Oyan takes these keys for
+itself, so they do not type odd characters or switch the keyboard language.
 
 **23. Answers that keep out of the way.** Before writing, Oyan works out
 which parts of your screen hold text or pictures and which are blank (simple
