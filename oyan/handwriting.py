@@ -36,7 +36,7 @@ GAP = 40                     # distance between the pointed-at spot and the note
 SCREEN_MARGIN = 10           # keep the note this far from the screen edges
 
 # A small reminder shown under the note once it is written.
-HINT_TEXT = "Type below to ask more    Esc: wipe"
+HINT_TEXT = "Type below to ask more    Rub to erase    Esc: wipe all"
 HINT_SIZE = 11
 HINT_HEIGHT = 24             # room kept free under the note for the reminder
 SPACE_FOR_ASK_BOX = 56       # room kept free under that for the typing box
@@ -65,6 +65,7 @@ class Note:
         self.visible = False    # the overlay switches this on when the buddy arrives
         self.progress = 0.0     # how many letters have been written so far
         self.wipe = 0.0         # 0 = untouched, 1 = completely wiped away
+        self.rubbed = 0.0       # 0 = untouched, 1 = rubbed away with the cursor
         self.show_hint = True   # only the newest note shows the reminder
         self.hint_text = HINT_TEXT
         self.marks = []         # circles, underlines and arrows drawn for this answer
@@ -101,27 +102,68 @@ class Note:
         return lines or ["..."]
 
     def _place_box(self, width, height, screen_rect, avoid, clear_of):
-        """Put the paper to the right of the anchor, or to the left if there
-        is no room, and never off the edge of the screen."""
+        """Find a place for the paper: near the spot, on the screen, and not
+        on top of any other answer or drawing.
+
+        We make a list of candidate places, nearest first, and take the first
+        one that touches nothing. The first candidates are the natural ones
+        (right of the spot, left, below, above); after those we simply try
+        every position on a grid across the screen.
+        """
         left_limit = screen_rect.left() + SCREEN_MARGIN
         right_limit = screen_rect.right() - SCREEN_MARGIN - width
         top_limit = screen_rect.top() + SCREEN_MARGIN
         bottom_limit = screen_rect.bottom() - SCREEN_MARGIN - height - HINT_HEIGHT - SPACE_FOR_ASK_BOX
 
-        # Start just right of the spot, or right of the drawings if there are any.
-        keep_clear = clear_of if clear_of is not None else QRectF(self.anchor, self.anchor)
-        x = max(self.anchor.x() + GAP, keep_clear.right() + 10)
-        if x > right_limit:
-            x = min(self.anchor.x() - GAP, keep_clear.left() - 10) - width
-        x = min(max(x, left_limit), right_limit)
-        y = min(max(self.anchor.y() - height / 2, top_limit), bottom_limit)
-        box = QRectF(x, y, width, height)
+        def on_screen(x, y):
+            return QRectF(
+                min(max(x, left_limit), right_limit),
+                min(max(y, top_limit), bottom_limit),
+                width, height,
+            )
 
-        # If that spot is already taken by an older note, slide down below it.
-        for other in sorted(avoid, key=lambda rect: rect.top()):
-            if box.intersects(other):
-                box.moveTop(min(other.bottom() + GAP_BETWEEN_NOTES, bottom_limit))
-        return box
+        # Everything the new note must keep away from.
+        obstacles = [QRectF(rect) for rect in avoid]
+        if clear_of is not None:
+            obstacles.append(QRectF(clear_of))
+
+        def footprint(box):
+            """The paper plus the room under it for the reminder and the typing box."""
+            return box.adjusted(-GAP_BETWEEN_NOTES, -GAP_BETWEEN_NOTES, GAP_BETWEEN_NOTES,
+                                HINT_HEIGHT + SPACE_FOR_ASK_BOX)
+
+        def is_free(box):
+            area = footprint(box)
+            return not any(area.intersects(obstacle) for obstacle in obstacles)
+
+        ax, ay = self.anchor.x(), self.anchor.y()
+        keep_clear = clear_of if clear_of is not None else QRectF(self.anchor, self.anchor)
+        natural = [
+            on_screen(max(ax + GAP, keep_clear.right() + 10), ay - height / 2),           # right
+            on_screen(min(ax - GAP, keep_clear.left() - 10) - width, ay - height / 2),    # left
+            on_screen(ax - width / 2, max(ay + GAP, keep_clear.bottom() + 10)),           # below
+            on_screen(ax - width / 2, min(ay - GAP, keep_clear.top() - 10) - height),     # above
+        ]
+        for box in natural:
+            if is_free(box):
+                return box
+
+        # No natural place is free: try a grid of positions, nearest first.
+        step = 40
+        grid = []
+        y = top_limit
+        while y <= bottom_limit:
+            x = left_limit
+            while x <= right_limit:
+                grid.append(QRectF(x, y, width, height))
+                x += step
+            y += step
+        grid.sort(key=lambda box: (box.center().x() - ax) ** 2 + (box.center().y() - ay) ** 2)
+        for box in grid:
+            if is_free(box):
+                return box
+
+        return natural[0]   # the screen is full; overlapping cannot be avoided
 
     def bounds(self):
         """A rectangle containing everything the note draws (for repainting)."""
@@ -169,25 +211,41 @@ class Note:
         swing = math.sin(self.wipe * math.pi * 2 * WIPE_STROKES)   # -1 .. 1
         return QPointF(self._wipe_front(), box.center().y() + swing * box.height() / 2)
 
-    def paint(self, painter):
-        if not self.visible or self.wipe >= 1:
-            return
-
+    def _begin(self, painter):
+        """Settings shared by both drawing steps: paleness and the wipe."""
         painter.save()
+        # Rubbing with the cursor makes the note paler and paler, like chalk
+        # under a cloth.
+        painter.setOpacity(max(1.0 - self.rubbed, 0.0))
         if self.wipe > 0:
             # Only draw what the eraser has not reached yet.
             area = self.bounds()
             area.setLeft(self._wipe_front())
             painter.setClipRect(area, Qt.ClipOperation.IntersectClip)
 
-        # A dot on the spot, and a line from it to the paper.
+    def paint_pointer(self, painter):
+        """Draw the dot on the spot and the line from it to the paper.
+
+        The overlay draws the pointers of ALL answers first and the papers
+        afterwards, so a line never runs across another answer's text.
+        """
+        if not self.visible or self.wipe >= 1:
+            return
         if self.has_point and not self.box.contains(self.anchor):
+            self._begin(painter)
             near_x = min(max(self.anchor.x(), self.box.left()), self.box.right())
             near_y = min(max(self.anchor.y(), self.box.top()), self.box.bottom())
             painter.setPen(QPen(INK, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawLine(self.anchor, QPointF(near_x, near_y))
             painter.setBrush(INK)
             painter.drawEllipse(self.anchor, 4, 4)
+            painter.restore()
+
+    def paint(self, painter):
+        """Draw the paper, the text and the reminder."""
+        if not self.visible or self.wipe >= 1:
+            return
+        self._begin(painter)
 
         # The paper.
         painter.setPen(QPen(INK, 1.5))

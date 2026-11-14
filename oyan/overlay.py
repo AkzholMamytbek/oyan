@@ -20,10 +20,11 @@ What the buddy is doing (its "mode")
 
 The board
 ---------
-The answer stays on screen like writing on a school board until you wipe it
-with Esc or ask something new (a new answer replaces the old one). While a
-screenshot is taken it is hidden for a moment, so an old answer is never in
-the picture that is sent.
+Answers stay on screen like writing on a school board (`self.notes`), up to
+MAX_NOTES of them; a new one is placed where it covers nothing. Esc wipes the
+whole board; rubbing the cursor quickly over one answer erases just that one.
+While a screenshot is taken they are hidden for a moment, so old answers are
+never in the picture that is sent.
 
 Coordinates
 -----------
@@ -70,6 +71,11 @@ POINT_PAUSE_SECONDS = 0.10  # how long it rests on the spot before writing
 WRITE_SPEED = 170           # letters per second
 WIPE_SECONDS = 0.55         # how long the eraser takes to wipe one answer
 DRAW_SPEED = 1300           # points of marker line drawn per second
+
+MAX_NOTES = 3               # answers kept on the board; a 4th removes the oldest
+RUB_SPEED = 900             # the cursor must move this fast (points/second) to count as rubbing
+RUB_DISTANCE = 1400         # this much fast rubbing over an answer erases it
+RUB_RECOVERY = 0.35         # how quickly a half-rubbed answer comes back, per second
 
 IDLE_SECONDS = 30           # mouse still for this long -> draw a doodle
 DOODLE_PAUSE_SECONDS = 45   # wait at least this long between doodles
@@ -156,9 +162,14 @@ class ScreenOverlay(QWidget):
             controller.doodle.paint(painter)
 
         if controller.notes_visible:
+            # Three layers, bottom to top: pointer lines, then the circles
+            # and arrows, then the papers with their text.
+            for note in controller.notes:
+                note.paint_pointer(painter)
             for note in controller.notes:
                 for mark in note.marks:
                     mark.paint(painter)
+            for note in controller.notes:
                 note.paint(painter)
 
         if not controller.buddy_visible:
@@ -196,6 +207,8 @@ class OverlayController:
         self.to_draw = []         # marks still waiting to be drawn
         self.drawing = None       # the mark being drawn right now, if any
         self.on_note_finished = None   # a function to call when writing ends
+        self.on_note_removed = None    # a function to call when an answer leaves the board
+        self.rub_cursor = QPointF(QCursor.pos())   # where the cursor was on the last tick
         self.glide = None         # details of the current flight (see _start_glide)
         self.pause_until = 0.0
 
@@ -285,13 +298,19 @@ class OverlayController:
         Returns the new note.
         """
         self.remove_doodle()
-        # One answer at a time: the previous answer and its drawings make way
-        # for the new one, so answers can never pile up on top of each other.
+        # Older answers stay on the board, but only MAX_NOTES - 1 of them:
+        # the oldest makes way. They also lose the reminder line, and any
+        # half-finished wipe or drawing on them is completed at once.
+        while len(self.notes) >= MAX_NOTES:
+            self.remove_note(self.notes[0])
         for old in self.notes:
+            old.wipe = 0.0
+            old.show_hint = False
             self._repaint(old.bounds())
             for mark in old.marks:
+                mark.progress = 1.0
+                mark.fade = 1.0
                 self._repaint(mark.bounds())
-        self.notes = []
 
         anchor = spot if spot is not None else self.buddy_pos
         screen = QGuiApplication.screenAt(anchor.toPoint()) or QGuiApplication.primaryScreen()
@@ -303,7 +322,8 @@ class OverlayController:
         new_note = Note(
             text, anchor, screen.geometry(),
             has_point=spot is not None,
-            avoid=[old.bounds() for old in self.notes],
+            avoid=[old.bounds() for old in self.notes]
+            + [mark.bounds() for old in self.notes for mark in old.marks],
             clear_of=marks_area,
         )
         self.notes.append(new_note)
@@ -328,6 +348,38 @@ class OverlayController:
             for mark in note.marks:
                 self._repaint(mark.bounds())
             self.notes.remove(note)
+            if self.on_note_removed is not None:
+                self.on_note_removed(note)
+
+    def _rub_step(self, seconds_passed):
+        """Erase an answer by rubbing the cursor over it, like a cloth on a board.
+
+        Moving the cursor FAST while it is over an answer adds to that
+        answer's `rubbed` amount, and the answer gets paler. Enough rubbing
+        removes it. Stop early and it slowly comes back. Moving the cursor
+        across an answer at normal speed does nothing.
+        """
+        cursor = QPointF(QCursor.pos())
+        moved = cursor - self.rub_cursor
+        self.rub_cursor = cursor
+        distance = math.hypot(moved.x(), moved.y())
+        speed = distance / seconds_passed if seconds_passed > 0 else 0
+
+        for note in list(self.notes):
+            if note is self.writing or not note.visible:
+                continue
+            before = note.rubbed
+            if speed >= RUB_SPEED and note.box.adjusted(-10, -10, 10, 10).contains(cursor):
+                note.rubbed += distance / RUB_DISTANCE
+            else:
+                note.rubbed = max(note.rubbed - RUB_RECOVERY * seconds_passed, 0.0)
+            if note.rubbed != before:
+                for mark in note.marks:
+                    mark.fade = max(1.0 - note.rubbed, 0.0)   # its drawings fade with it
+                    self._repaint(mark.bounds())
+                self._repaint(note.bounds())
+            if note.rubbed >= 1.0:
+                self.remove_note(note)
 
     def _draw_next(self):
         """Draw the next waiting mark; when none are left, go back to the cursor."""
@@ -494,6 +546,10 @@ class OverlayController:
         old_pos = QPointF(self.buddy_pos)
 
         self._idle_step(now)
+        if self.notes and self.notes_visible and self.mode != "wipe":
+            self._rub_step(seconds_passed)
+        else:
+            self.rub_cursor = QPointF(QCursor.pos())
 
         if self.mode == "follow":
             # Where the buddy wants to be: next to the cursor, floating gently.

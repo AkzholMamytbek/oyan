@@ -97,11 +97,12 @@ so text hidden in a screenshot cannot trick it into doing anything but answer.
 the answer is about, drops a small marker there, and writes the answer beside
 it, letter by letter, on a little piece of paper.
 
-**6. The board.** The answer stays on screen like writing on a school board.
-Under it a small box waits for your next question: click in it (or press the
-hotkey) and type. It does not take the keyboard until you do. A new answer
-replaces the old one, so answers never pile up. Press Esc and the dot wipes
-the board clean, scrubbing across the answer like an eraser.
+**6. The board.** Answers stay on screen like writing on a school board, up
+to three at a time; a fourth pushes the oldest off. Each new answer is placed
+where it covers no other answer or drawing. Under the newest one a small box
+waits for your next question: click in it (or press the hotkey) and type. To
+erase one answer, rub the cursor quickly back and forth over it, like a
+cloth: it fades and disappears. Esc wipes the whole board.
 
 **7. Circles, underlines and arrows.** The AI can now ask for a thing to be
 circled, a piece of text underlined, or an arrow drawn. The dot draws them

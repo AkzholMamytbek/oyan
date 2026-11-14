@@ -44,6 +44,7 @@ class Oyan:
         self.overlay = OverlayController(app)
 
         self.overlay.on_note_finished = self.show_box_under
+        self.overlay.on_note_removed = self.on_note_removed
         # No idle doodles while you are typing a question or waiting for an answer.
         self.overlay.may_doodle = lambda: not self.ask_box.isVisible() and not self.ai.is_busy()
 
@@ -119,6 +120,17 @@ class Oyan:
         self.ai.prepare()   # you may well ask more: be ready
         if not self.ask_box.is_typing():   # do not disturb if you are typing
             self.ask_box.show_attached(self._place_under(note))
+
+    def on_note_removed(self, note):
+        """An answer left the board (rubbed out, or pushed off by a newer one).
+        Keep the waiting typing box under the newest answer, or put it away."""
+        if not self.ask_box.isVisible() or not self.ask_box.attached or self.ask_box.is_typing():
+            return
+        newest = self.overlay.note
+        if newest is not None and newest.visible and newest.finished():
+            self.ask_box.show_attached(self._place_under(newest))
+        else:
+            self.ask_box.close_box()
 
     def on_hotkey(self):
         """The hotkey starts typing; pressing it again while typing closes the box."""
