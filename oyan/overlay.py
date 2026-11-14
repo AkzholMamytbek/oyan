@@ -20,11 +20,13 @@ What the buddy is doing (its "mode")
 
 The board
 ---------
+Oyan's windows are marked "leave me out of screenshots" (see
+show_on_every_desktop), so nothing drawn here is ever in the picture that is
+sent to the AI.
+
 Answers stay on screen like writing on a school board (`self.notes`), up to
 MAX_NOTES of them; a new one is placed where it covers nothing. Esc wipes the
 whole board; rubbing the cursor quickly over one answer erases just that one.
-While a screenshot is taken they are hidden for a moment, so old answers are
-never in the picture that is sent.
 
 Coordinates
 -----------
@@ -39,6 +41,7 @@ import time
 import objc
 from AppKit import (
     NSScreenSaverWindowLevel,
+    NSWindowSharingNone,
     NSWorkspace,
     NSWorkspaceActiveSpaceDidChangeNotification,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
@@ -128,6 +131,10 @@ def show_on_every_desktop(widget, takes_keyboard=False):
     window.setLevel_(NSScreenSaverWindowLevel)               # above everything, like a screen saver
     window.setHidesOnDeactivate_(False)                      # stay when another app comes forward
     window.setCanHide_(False)                                # stay when apps are hidden
+    # Leave this window out of screenshots. Oyan's answers and its triangle
+    # are then never in the picture that is sent, without having to hide
+    # them (hiding made the board flicker every time you asked something).
+    window.setSharingType_(NSWindowSharingNone)
 
 
 class ScreenOverlay(QWidget):

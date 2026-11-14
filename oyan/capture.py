@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRect, Qt
-from PyQt6.QtGui import QImage
+from PyQt6.QtGui import QImage, QPainter
 from Quartz import CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess
 
 # Oyan keeps its private files in a folder called ".oyan" in your home folder.
@@ -83,9 +83,15 @@ def capture_screen(screen):
     return capture_rect(screen.geometry())   # this monitor's rectangle, in points
 
 
-def capture_rect(rect):
+def capture_rect(rect, pen_strokes=()):
     """Take a picture of one rectangle of the desktop (a QRect in global
-    screen points) and save it. Returns a Screenshot."""
+    screen points) and save it. Returns a Screenshot.
+
+    Oyan's own windows are left out of screenshots by macOS (see overlay.py).
+    That is what we want for its answers, but the marks YOU drew with your
+    pen should be in the picture, so they are painted onto it here.
+    `pen_strokes` is a list of strokes, each a list of desktop positions.
+    """
     DATA_FOLDER.mkdir(exist_ok=True)
     DATA_FOLDER.chmod(0o700)   # 700 = only your Mac user account may open the folder
 
@@ -106,6 +112,19 @@ def capture_rect(rect):
     RAW_PATH.unlink(missing_ok=True)   # the full-size copy is not needed any more
     if image.isNull():
         raise RuntimeError("The screenshot could not be read.")
+
+    if pen_strokes:
+        from oyan.sketch import paint_strokes   # imported here: sketch.py needs the overlay, which needs this file
+        # The picture has more pixels than the screen has points (2x on a
+        # Retina screen). Tell the painter to shift and stretch everything so
+        # that desktop positions land on the right pixels.
+        zoom = image.width() / rect.width()
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.scale(zoom, zoom)
+        painter.translate(-rect.x(), -rect.y())
+        paint_strokes(painter, pen_strokes)
+        painter.end()
     if max(image.width(), image.height()) > MAX_IMAGE_SIDE:
         image = image.scaled(
             MAX_IMAGE_SIDE,

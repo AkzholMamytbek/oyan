@@ -188,7 +188,7 @@ a fresh screenshot. Pressing Option + S again stops it early, Esc cancels.
 Your voice never leaves the Mac. One-time setup:
 
 ```bash
-python -m oyan --setup-voice    # downloads the model, about 150 MB, once
+python -m oyan --setup-voice    # downloads the model, about 460 MB, once
 ```
 
 macOS will ask for Microphone permission for the app you start Oyan from.
@@ -225,6 +225,12 @@ characters into the app you are in or switch the keyboard language.
 which parts of your screen hold text or pictures and which are blank (simple
 arithmetic on the screenshot, done on your Mac), and puts its answer in the
 nearest empty area instead of on top of what you are reading.
+
+**24. Steadier and better at listening.** Oyan's windows are now left out of
+screenshots by macOS itself, so the board no longer blinks away and back when
+you ask something. Voice uses a larger speech model that is told you speak
+English, which makes it far better with accents, and the screenshot is taken
+while your words are still being recognised, so the answer starts sooner.
 
 ## Credits
 

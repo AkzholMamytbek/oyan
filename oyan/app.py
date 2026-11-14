@@ -38,7 +38,7 @@ from oyan.speak import Speaker
 
 
 NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
-CAPTURE_DELAY_MS = 150   # wait for the ask box to vanish before taking the picture
+CAPTURE_DELAY_MS = 60    # a short pause before the picture, so your app is back in front
 STEP_CLICK_RADIUS = 90   # a click this close to a step's spot counts as doing the step
 STEP_CIRCLE = 16         # half the size of the circle drawn around a step's spot
 
@@ -91,6 +91,8 @@ class Oyan:
         self.screenshot = None   # the latest screenshot (its size and place on screen)
         self.exchanges = []      # (question, answer) pairs since the board was last wiped
         self.clutter = None      # which parts of the latest screenshot are busy (see clutter.py)
+        self.image_bytes = None  # the picture, between taking it and sending it
+        self.picture_is_ready = False   # True when a spoken question's picture was taken early
 
     def start(self):
         self.overlay.start()
@@ -229,13 +231,24 @@ class Oyan:
             self.listener.start()
 
     def on_listening_stopped(self):
-        """The microphone is off; the words are being worked out."""
+        """The microphone is off; the words are being worked out.
+
+        To save time, the screenshot is taken NOW, while the speech is still
+        being turned into text, instead of afterwards. If no words come out
+        of the recording, the picture is thrown away and nothing is sent.
+        """
         self.overlay.listening = False
         self.overlay.thinking = True
+        self.picture_is_ready = False
+        if blocked.blocked_app_on_screen() is None and capture.has_permission():
+            self.area = None
+            self.picture_is_ready = self.take_picture()
 
     def on_heard(self, text):
         self.overlay.thinking = False
         if not text:
+            self.picture_is_ready = False
+            self.image_bytes = None   # throw the unused picture away
             self.overlay.show_answer("I did not catch any words. Try again a little closer to the microphone.", None)
             return
         # Send it straight away: speaking the question is the whole request.
@@ -245,6 +258,8 @@ class Oyan:
     def on_voice_failed(self, message):
         self.overlay.listening = False
         self.overlay.thinking = False
+        self.picture_is_ready = False
+        self.image_bytes = None
         self.overlay.show_answer(message, None)
 
     def on_escape(self):
@@ -331,6 +346,13 @@ class Oyan:
         self.steps = []   # a new question ends any step-by-step answer
         self.speaker.stop()
         self._note_how_it_was_asked()
+        # A spoken question may already have its picture (see on_listening_stopped).
+        picture_ready, self.picture_is_ready = self.picture_is_ready, False
+        if picture_ready and self.asked_by_voice:
+            self.ai.cancel()
+            self.question = question
+            self.send_question()
+            return
         if not self._ready_to_capture():
             return
         self.ai.cancel()   # forget an earlier question that is still waiting
@@ -338,10 +360,9 @@ class Oyan:
         self.question = question
         self.area = None
 
-        # Hide the buddy and the answers on the board so they are not in the
-        # picture, and wait a moment so the ask box has really gone and your
-        # app is back in front.
-        self.overlay.set_board_visible(False)
+        # Take the picture. Nothing of Oyan's needs hiding first: macOS leaves
+        # Oyan's windows out of screenshots (see overlay.py). We only wait a
+        # moment so your app is back in front after the ask box closed.
         QTimer.singleShot(CAPTURE_DELAY_MS, self.take_screenshot)
 
     def on_question_for_area(self, question):
@@ -356,54 +377,56 @@ class Oyan:
         self.ai.cancel()
         self.overlay.thinking = False
         self.question = question
-        self.overlay.set_board_visible(False)
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         self.region.open_on(screen)
 
     def on_area_selected(self, rect):
         self.area = rect
         bring_to_front(app_in_front())   # give the keyboard back to your app
-        # Wait for the dimming to disappear before taking the picture.
         QTimer.singleShot(CAPTURE_DELAY_MS, self.take_screenshot)
 
     def on_area_cancelled(self):
         """Esc while choosing an area: nothing is captured, nothing is sent."""
-        self.overlay.set_board_visible(True)
         bring_to_front(app_in_front())
 
     def take_screenshot(self):
+        """Take the picture and send it with the question."""
+        if self.take_picture():
+            self.send_question()
+
+    def take_picture(self):
+        """Take the screenshot and get it ready to send. Returns True if it worked."""
         # Capture the chosen area, or else the whole monitor the cursor is on.
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         rect = self.area if self.area is not None else screen.geometry()
         self.area = None
         try:
-            self.screenshot = capture.capture_rect(rect)
+            self.screenshot = capture.capture_rect(rect, self.overlay.user_strokes)
+            # Read the picture into memory and remove the working file; the
+            # "what left my Mac" log keeps its own copy once it is sent.
+            self.image_bytes = self.screenshot.path.read_bytes()
         except Exception as error:
             print(f"Could not take the screenshot: {error}")
-            return
-        finally:
-            self.overlay.set_board_visible(True)   # always bring everything back
-
-        # Send the question and the screenshot to the AI model. The buddy
-        # pulses while we wait for the reply.
-        try:
-            # Read the picture into memory and remove the working file; the
-            # "what left my Mac" log keeps its own copy.
-            image_bytes = self.screenshot.path.read_bytes()
+            return False
         finally:
             capture.delete_screenshot()
 
         # Work out which parts of the screen are busy, so the answer can be
         # written in an empty area instead of on top of what you are reading.
         try:
-            self.clutter = Clutter(image_bytes, self.screenshot)
+            self.clutter = Clutter(self.image_bytes, self.screenshot)
         except Exception:
             self.clutter = None   # no harm done: the answer just goes next to the spot
+        return True
 
+    def send_question(self):
+        """Send the question and the picture to the AI. The buddy pulses
+        while we wait for the reply."""
         drew = bool(self.overlay.user_strokes)
         self.strokes_sent = drew
         self.overlay.thinking = True
-        self.ai.ask(self.question, self.screenshot, image_bytes, earlier=self.exchanges, user_drew=drew)
+        self.ai.ask(self.question, self.screenshot, self.image_bytes, earlier=self.exchanges, user_drew=drew)
+        self.image_bytes = None   # sent; no need to keep the picture in memory
 
     def on_answer(self, answer):
         """The AI replied. `answer` has the text and the point (see ai.py)."""

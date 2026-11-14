@@ -62,10 +62,10 @@ def main():
         return
     if option == "--setup-voice":
         from oyan import listen   # imported here because it is slow to load
-        if listen.is_set_up():
-            print("Voice is already set up.")
+        if listen.has_best_model():
+            print("Voice is already set up with the best model.")
         else:
-            print("Downloading the speech-recognition model (about 150 MB). This is the only")
+            print("Downloading the speech-recognition model (about 460 MB). This is the only")
             print("time voice uses the internet; afterwards it runs entirely on this Mac.")
             listen.set_up()
             print("Done.")

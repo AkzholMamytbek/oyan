@@ -20,7 +20,7 @@ voice has been heard, QUIET_SECONDS without it means "finished".
 
 One-time setup
 --------------
-The model file (about 150 MB) has to be downloaded once:
+The model file (about 460 MB) has to be downloaded once:
 
     python -m oyan --setup-voice
 
@@ -39,10 +39,23 @@ from faster_whisper import WhisperModel
 from faster_whisper.utils import download_model
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
-MODEL_NAME = "base"        # small and quick, understands many languages
+# The speech models Oyan can use, best first. "small" is about three times
+# the size of "base" and clearly better with accents; Oyan uses the best one
+# that has been downloaded.
+MODEL_NAMES = ["small", "base"]
+LANGUAGE = "en"            # the language you speak to Oyan. Telling the model
+                           # this, instead of letting it guess, avoids a whole
+                           # class of mistakes with accented speech.
+# A few words given to the model as a hint of what to expect. It makes these
+# and similar words more likely to be heard correctly.
+EXPECTED_WORDS = (
+    "Oyan, explain this exercise. Solve for x. Logarithm, equation, fraction, "
+    "square root, derivative, integral, velocity, acceleration, force. "
+    "Python function, variable, loop, list, error. What does this mean?"
+)
 SAMPLE_RATE = 16000        # sound samples per second; what Whisper expects
 MAX_SECONDS = 30           # stop listening by itself after this long, whatever happens
-QUIET_SECONDS = 1.0        # this much silence after speech means "I am finished"
+QUIET_SECONDS = 0.8        # this much silence after speech means "I am finished"
 NO_SPEECH_SECONDS = 7      # give up if nobody says anything for this long
 PIECE_SAMPLES = 1600       # sound arrives in pieces this long: 1600 samples = 0.1 second
 ROOM_SECONDS = 0.3         # how long we listen to the room before judging loudness
@@ -51,18 +64,29 @@ QUIETEST_VOICE = 0.012     # ...and never quieter than this, however silent the 
 SILENCE_LEVEL = 0.0005     # below this the microphone gave us nothing at all
 
 
+def downloaded_model():
+    """The best model that is already on this Mac, or None. (No internet.)"""
+    for name in MODEL_NAMES:
+        try:
+            download_model(name, local_files_only=True)
+            return name
+        except Exception:
+            pass
+    return None
+
+
 def is_set_up():
-    """Has the model been downloaded already? (Does not use the internet.)"""
-    try:
-        download_model(MODEL_NAME, local_files_only=True)
-        return True
-    except Exception:
-        return False
+    """Is any model downloaded already?"""
+    return downloaded_model() is not None
+
+
+def has_best_model():
+    return downloaded_model() == MODEL_NAMES[0]
 
 
 def set_up():
-    """Download the model. The one and only step here that uses the internet."""
-    return download_model(MODEL_NAME)
+    """Download the best model. The one and only step here that uses the internet."""
+    return download_model(MODEL_NAMES[0])
 
 
 class Listener(QObject):
@@ -204,10 +228,16 @@ class Listener(QObject):
         with self.model_lock:
             if self.model is None:
                 # local_files_only=True: use the downloaded file, never the internet.
-                self.model = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8", local_files_only=True)
+                self.model = WhisperModel(downloaded_model(), device="cpu", compute_type="int8", local_files_only=True)
 
     def transcribe(self, sound):
         """Turn sound (numbers between -1 and 1, 16000 per second) into text."""
         self._load_model()
-        pieces, _ = self.model.transcribe(sound, beam_size=5)
+        pieces, _ = self.model.transcribe(
+            sound,
+            language=LANGUAGE,
+            initial_prompt=EXPECTED_WORDS,
+            beam_size=5,                        # consider several possible readings, keep the best
+            condition_on_previous_text=False,   # judge each sentence on its own
+        )
         return " ".join(piece.text.strip() for piece in pieces).strip()
