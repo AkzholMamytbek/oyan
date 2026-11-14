@@ -37,6 +37,8 @@ import time
 import objc
 from AppKit import (
     NSScreenSaverWindowLevel,
+    NSWorkspace,
+    NSWorkspaceActiveSpaceDidChangeNotification,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorFullScreenAuxiliary,
     NSWindowCollectionBehaviorIgnoresCycle,
@@ -212,6 +214,21 @@ class OverlayController:
     def start(self):
         self.rebuild_overlays()
         self.timer.start(TICK_MS)
+
+        # While macOS slides from one desktop to another (about a second) it
+        # hides every app's windows, Oyan's included; no window setting
+        # changes that. What we can do is come back the instant the slide
+        # ends: macOS tells us "the desktop changed", and we put our windows
+        # in front and redraw them completely, straight away.
+        self._space_observer = NSWorkspace.sharedWorkspace().notificationCenter().addObserverForName_object_queue_usingBlock_(
+            NSWorkspaceActiveSpaceDidChangeNotification, None, None, self._on_desktop_changed
+        )
+
+    def _on_desktop_changed(self, notification):
+        for overlay in self.overlays:
+            window = objc.objc_object(c_void_p=int(overlay.winId())).window()
+            window.orderFrontRegardless()
+            overlay.repaint()
 
     def rebuild_overlays(self, *_):
         """Create one overlay window per monitor (throwing away old ones)."""
