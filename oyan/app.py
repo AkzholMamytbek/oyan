@@ -4,6 +4,7 @@ Each part lives in its own file and knows nothing about the others:
 * overlay.py  - the see-through window and the buddy dot
 * handwriting.py - the written answer
 * marks.py    - circles, underlines and arrows
+* doodles.py  - the idle sketches
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -30,6 +31,8 @@ class Oyan:
         self.overlay = OverlayController(app)
 
         self.overlay.on_note_finished = self.show_box_under
+        # No idle doodles while you are typing a question or waiting for an answer.
+        self.overlay.may_doodle = lambda: not self.ask_box.isVisible() and not self.ai.is_busy()
 
         self.ask_box = AskBox()
         self.ask_box.submitted.connect(self.on_question)

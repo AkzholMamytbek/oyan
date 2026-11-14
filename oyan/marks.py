@@ -29,10 +29,11 @@ ARROW_HEAD = 14                # length of the arrow head's sides
 
 
 class Mark:
-    def __init__(self, strokes, color=MARKER, width=MARKER_WIDTH):
+    def __init__(self, strokes, color=MARKER, width=MARKER_WIDTH, outline=None):
         self.strokes = [[QPointF(p) for p in stroke] for stroke in strokes]
         self.color = color
         self.width = width
+        self.outline = outline   # an optional darker colour drawn underneath
         self.progress = 0.0   # 0 = nothing drawn yet, 1 = finished
         self.fade = 1.0       # 1 = solid; goes down to 0 when being wiped
 
@@ -87,12 +88,17 @@ class Mark:
         if self.progress <= 0 or self.fade <= 0:
             return
         path, _ = self._walk()
-        color = QColor(self.color)
-        color.setAlphaF(color.alphaF() * self.fade)
-        pen = QPen(color, self.width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(path)
+        # Draw the outline first (if any), slightly thicker, then the line on
+        # top of it. The outline keeps a light line visible on a light
+        # background.
+        for base_color, width in ((self.outline, self.width + 2.4), (self.color, self.width)):
+            if base_color is None:
+                continue
+            color = QColor(base_color)
+            color.setAlphaF(color.alphaF() * max(self.fade, 0.0))
+            painter.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            painter.drawPath(path)
 
 
 # --- Recipes for each kind of mark ------------------------------------------

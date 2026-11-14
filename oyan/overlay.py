@@ -15,6 +15,8 @@ What the buddy is doing (its "mode")
 * "draw"   - drawing a circle, underline or arrow (see marks.py).
 * "write"  - riding along the answer as it is written (see handwriting.py).
 * "wipe"   - scrubbing across an answer like a board eraser, removing it.
+* "doodle" - drawing a small idle sketch in a corner (see doodles.py).
+* "admire" - sitting next to the finished doodle for a few seconds.
 
 The board
 ---------
@@ -45,6 +47,7 @@ from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
+from oyan.doodles import make_doodle
 from oyan.handwriting import Note
 
 # --- Things you can tweak -------------------------------------------------
@@ -64,6 +67,14 @@ POINT_PAUSE_SECONDS = 0.35  # how long it rests on the spot before writing
 WRITE_SPEED = 38            # letters per second
 WIPE_SECONDS = 0.55         # how long the eraser takes to wipe one answer
 DRAW_SPEED = 520            # points of marker line drawn per second
+
+IDLE_SECONDS = 30           # mouse still for this long -> draw a doodle
+DOODLE_PAUSE_SECONDS = 45   # wait at least this long between doodles
+DOODLE_SIZE = 84            # how big a doodle is, in points
+DOODLE_MARGIN = 36          # distance from the corner of the screen
+DOODLE_SPEED = 260          # points of line drawn per second (unhurried)
+ADMIRE_SECONDS = 8          # how long a finished doodle stays
+DOODLE_FADE_SECONDS = 0.8   # how long it takes to fade away
 
 BUDDY_COLOR = QColor(255, 153, 51)     # warm orange
 BUDDY_OUTLINE = QColor(60, 40, 20)     # dark brown, like pencil
@@ -136,6 +147,9 @@ class ScreenOverlay(QWidget):
         # this window.
         painter.translate(-QPointF(self.geometry().topLeft()))
 
+        if controller.notes_visible and controller.doodle is not None:
+            controller.doodle.paint(painter)
+
         if controller.notes_visible:
             for note in controller.notes:
                 for mark in note.marks:
@@ -179,6 +193,15 @@ class OverlayController:
         self.glide = None         # details of the current flight (see _start_glide)
         self.pause_until = 0.0
 
+        # Idle doodles.
+        self.doodle = None                 # the sketch on screen, if any
+        self.doodle_name = None            # which one it was, to avoid repeats
+        self.doodle_fading_since = None    # when it started to fade away
+        self.last_cursor = QCursor.pos()
+        self.still_since = self.start_time # when the mouse last stopped moving
+        self.next_doodle_at = self.start_time
+        self.may_doodle = lambda: True     # the app can say "not now" (see app.py)
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.tick)
 
@@ -208,6 +231,8 @@ class OverlayController:
 
     def set_board_visible(self, visible):
         """Hide or show the buddy AND the answers (hidden during a screenshot)."""
+        if not visible:
+            self.remove_doodle()
         self.notes_visible = visible
         self.set_buddy_visible(visible)
 
@@ -232,6 +257,7 @@ class OverlayController:
         not point at anything; then the note is written near the buddy.
         `marks` is a list of Mark objects (see marks.py); it may be empty.
         """
+        self.remove_doodle()
         # An unfinished wipe or older reminders should not linger.
         for old in self.notes:
             old.wipe = 0.0
@@ -290,6 +316,7 @@ class OverlayController:
 
     def wipe_board(self):
         """Wipe the answers away one by one, like cleaning a school board."""
+        self.remove_doodle()
         self.writing = None
         self.to_draw = []
         for note in self.notes:
@@ -317,6 +344,71 @@ class OverlayController:
 
     def _start_writing(self):
         self.mode = "write"
+
+    # --- Idle doodles --------------------------------------------------------
+
+    def _start_doodle(self):
+        """Pick a doodle, place it in the bottom-right corner, fly there."""
+        screen = QGuiApplication.screenAt(self.last_cursor) or QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()   # the screen minus menu bar and Dock
+        corner = QPointF(
+            area.right() - DOODLE_MARGIN - DOODLE_SIZE,
+            area.bottom() - DOODLE_MARGIN - DOODLE_SIZE,
+        )
+        self.doodle, self.doodle_name = make_doodle(corner, DOODLE_SIZE, previous=self.doodle_name)
+        self.doodle_fading_since = None
+        self._start_glide(self.doodle.start_position(), then=self._start_doodling)
+
+    def _start_doodling(self):
+        self.mode = "doodle"
+
+    def _stop_doodling(self, now):
+        """Go back to the cursor and let the doodle fade away."""
+        self.mode = "follow"
+        self.doodle_fading_since = now
+        self.next_doodle_at = now + DOODLE_PAUSE_SECONDS
+
+    def remove_doodle(self):
+        """Take the doodle off the screen at once (something real is happening)."""
+        if self.doodle is not None:
+            self._repaint(self.doodle.bounds())
+            if self.mode in ("doodle", "admire"):
+                self.mode = "follow"
+        self.doodle = None
+        self.doodle_fading_since = None
+        self.next_doodle_at = time.monotonic() + DOODLE_PAUSE_SECONDS
+
+    def _idle_step(self, now):
+        """Called on every tick: watch the mouse and run the doodle's life."""
+        cursor = QCursor.pos()
+        moved = (cursor - self.last_cursor).manhattanLength() > 3
+        if moved:
+            self.last_cursor = cursor
+            self.still_since = now
+
+        busy_doodling = self.doodle is not None and self.doodle_fading_since is None
+        if busy_doodling and moved:
+            self._stop_doodling(now)          # you are back: return to the cursor
+
+        elif (
+            self.mode == "follow"
+            and self.doodle is None
+            and not self.notes
+            and not self.thinking
+            and self.buddy_visible
+            and now - self.still_since >= IDLE_SECONDS
+            and now >= self.next_doodle_at
+            and self.may_doodle()
+        ):
+            self._start_doodle()
+
+        # Fade the doodle out, then forget it.
+        if self.doodle is not None and self.doodle_fading_since is not None:
+            self.doodle.fade = 1 - (now - self.doodle_fading_since) / DOODLE_FADE_SECONDS
+            self._repaint(self.doodle.bounds())
+            if self.doodle.fade <= 0:
+                self.doodle = None
+                self.doodle_fading_since = None
 
     # --- Flying along a curve -----------------------------------------------
 
@@ -358,6 +450,8 @@ class OverlayController:
         self.last_tick = now
         old_pos = QPointF(self.buddy_pos)
 
+        self._idle_step(now)
+
         if self.mode == "follow":
             # Where the buddy wants to be: next to the cursor, floating gently.
             bob = math.sin((now - self.start_time) * BOB_SPEED) * BOB_HEIGHT
@@ -394,6 +488,19 @@ class OverlayController:
                 self.writing = None
                 if self.on_note_finished is not None:
                     self.on_note_finished(note)
+
+        elif self.mode == "doodle":
+            doodle = self.doodle
+            doodle.progress += DOODLE_SPEED * seconds_passed / doodle.total_length
+            self.buddy_pos = doodle.pen_position()
+            self._repaint(doodle.bounds())
+            if doodle.progress >= 1:
+                self.mode = "admire"
+                self.pause_until = now + ADMIRE_SECONDS
+
+        elif self.mode == "admire":
+            if now >= self.pause_until:
+                self._stop_doodling(now)
 
         elif self.mode == "wipe":
             note = self.notes[0]

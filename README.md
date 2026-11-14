@@ -108,6 +108,12 @@ circled, a piece of text underlined, or an arrow drawn. The dot draws them
 live with a red marker, a little wobbly on purpose so they look hand-drawn,
 and they are wiped together with the answer they belong to.
 
+**8. Idle sketches.** Leave the mouse still for half a minute and the dot
+wanders to the bottom-right corner and draws a small chalk doodle (a cat, a
+rocket, a sun and seven others), admires it for a few seconds, and lets it
+fade. Move the mouse and it comes straight back. The doodles are built into
+the program: no AI call, no screenshot, nothing sent.
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT
