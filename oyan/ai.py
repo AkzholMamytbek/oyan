@@ -51,8 +51,8 @@ from dataclasses import dataclass, field
 
 from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
 
-from oyan import settings
-from oyan.ai_direct import AIError, ask_with_key
+from oyan import sent_log, settings
+from oyan.ai_direct import API_MODEL, AIError, ask_with_key
 from oyan.capture import DATA_FOLDER
 
 AI_MODEL = "sonnet"       # for the `claude` command; "haiku" is faster, "opus" is smarter
@@ -159,18 +159,42 @@ class AskAI(QObject):
     def ask(self, question, screenshot):
         """Send the question and screenshot. The picture file is read here,
         straight away, so the caller may delete it as soon as this returns."""
+        image_bytes = screenshot.path.read_bytes()
         # base64 writes the picture's bytes as plain letters and digits, which
         # is how pictures travel inside a text message to the AI.
-        image_data = base64.standard_b64encode(screenshot.path.read_bytes()).decode("utf-8")
+        image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
         text = (
             f"The screenshot is {screenshot.width} x {screenshot.height} pixels.\n"
             f"Question: {question}"
         )
+
+        # Decide which way the request will go.
         api_key = settings.get_api_key()
+        command = None if api_key else find_command()
+        if not api_key and command is None:
+            self.failed.emit(
+                "The `claude` command was not found. Install Claude Code and sign in, "
+                "or save an API key with:  python -m oyan --set-key"
+            )
+            return
+
+        # Privacy rule: write down what is about to leave the Mac BEFORE
+        # sending it. If the note cannot be written, nothing is sent.
+        try:
+            sent_log.record(
+                text, image_bytes, screenshot.width, screenshot.height,
+                sent_via="Anthropic API key" if api_key else "claude command",
+                model=API_MODEL if api_key else AI_MODEL,
+                system_prompt=SYSTEM_PROMPT,
+            )
+        except OSError as error:
+            self.failed.emit(f"Could not write the sent-items log, so nothing was sent: {error}")
+            return
+
         if api_key:
             self._ask_with_key(api_key, image_data, text)
         else:
-            self._ask_with_command(image_data, text)
+            self._ask_with_command(command, image_data, text)
 
     # --- Way 1: an API key --------------------------------------------------
 
@@ -202,15 +226,7 @@ class AskAI(QObject):
 
     # --- Way 2: the `claude` command ----------------------------------------
 
-    def _ask_with_command(self, image_data, text):
-        command = find_command()
-        if command is None:
-            self.failed.emit(
-                "The `claude` command was not found. Install Claude Code and sign in, "
-                "or save an API key with:  python -m oyan --set-key"
-            )
-            return
-
+    def _ask_with_command(self, command, image_data, text):
         # The message, in the format the program expects: a picture and a text.
         message = {
             "type": "user",

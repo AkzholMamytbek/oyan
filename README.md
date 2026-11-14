@@ -24,7 +24,7 @@ handwriting style.
    hotkey. Oyan never captures in the background.
 3. **Idle sketches use no AI calls.** They come from a built-in set of doodles.
 4. **Everything sent to the AI model is recorded** in a local log you can open
-   (from version 2).
+   with `python -m oyan --log`.
 5. History, settings and logs are plain files in your home folder. They are
    never uploaded.
 
@@ -82,8 +82,8 @@ app and a small text box opens next to the cursor. Enter sends the question,
 Esc closes the box, and you are returned to the app you were in.
 
 **3. The screenshot.** When you press Enter, and only then, Oyan takes one
-picture of the screen your cursor is on. The picture file is deleted from
-your Mac as soon as it has been handed to the AI call.
+picture of the screen your cursor is on. The only copy kept is the one in
+the "what left my Mac" log (see update 10), which stays on your Mac.
 
 **4. Asking the AI.** The question and the screenshot go to the AI model, and
 the answer comes back with a position on the screen. Oyan does this by running
@@ -117,6 +117,18 @@ the program: no AI call, no screenshot, nothing sent.
 **9. Region select.** Send a question with **Shift+Enter** instead of Enter
 and the screen dims: drag a box over the part you want Oyan to look at. Only
 that rectangle is captured and sent. Esc cancels and sends nothing.
+
+**10. "What left my Mac" log.** Before anything is sent, Oyan writes it
+down: the exact picture, the exact words, the time, and where it went. If the
+note cannot be written, nothing is sent. See it all on one page, or delete it:
+
+```bash
+python -m oyan --log          # open the list in your browser
+python -m oyan --clear-log    # delete the whole record
+```
+
+The record lives in `~/.oyan/sent`, readable only by your Mac user account,
+and keeps the newest 200 requests.
 
 ## Credits
 

@@ -6,6 +6,7 @@ Each part lives in its own file and knows nothing about the others:
 * marks.py    - circles, underlines and arrows
 * doodles.py  - the idle sketches
 * region.py   - dragging a box to send only part of the screen
+* sent_log.py - the record of everything sent to the AI
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -73,6 +74,7 @@ class Oyan:
                 "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
                 "  3. Quit Oyan with Ctrl+C and start it again."
             )
+        print("To see everything Oyan has sent:  python -m oyan --log")
         print("Press Ctrl+C here to quit.")
 
     def _place_under(self, note):
@@ -186,8 +188,8 @@ class Oyan:
         try:
             self.ai.ask(self.question, self.screenshot)
         finally:
-            # The picture has been read into memory for sending; do not leave
-            # a copy of your screen lying on the disk.
+            # The picture has been read into memory for sending, and a copy
+            # is in the "what left my Mac" log; remove this working file.
             capture.delete_screenshot()
 
     def on_answer(self, answer):

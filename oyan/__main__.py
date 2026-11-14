@@ -1,7 +1,9 @@
 """Start Oyan.  Run from the project folder with:  python -m oyan
 
-Two extra commands manage the optional API key:
-    python -m oyan --set-key      save a key (you paste it; it is not shown)
+Extra commands:
+    python -m oyan --log          show everything Oyan has sent to the AI
+    python -m oyan --clear-log    delete that record
+    python -m oyan --set-key      save an optional API key (it is not shown)
     python -m oyan --remove-key   delete the saved key
 """
 
@@ -12,7 +14,7 @@ import sys
 from AppKit import NSApp, NSApplicationActivationPolicyAccessory
 from PyQt6.QtWidgets import QApplication
 
-from oyan import settings
+from oyan import sent_log, settings
 from oyan.app import Oyan
 
 
@@ -31,8 +33,16 @@ def manage_key(option):
 
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] in ("--set-key", "--remove-key"):
-        manage_key(sys.argv[1])
+    option = sys.argv[1] if len(sys.argv) > 1 else ""
+    if option in ("--set-key", "--remove-key"):
+        manage_key(option)
+        return
+    if option == "--log":
+        path = sent_log.open_page()
+        print(f"Opened {path} in your browser ({len(sent_log.read_entries())} request(s) recorded).")
+        return
+    if option == "--clear-log":
+        print(f"Deleted the log ({sent_log.clear()} request(s)).")
         return
 
     app = QApplication(sys.argv)
