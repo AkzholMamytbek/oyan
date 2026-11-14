@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QWidget
 
 from oyan.overlay import show_on_every_desktop
 
-BOX_WIDTH = 360
+BOX_WIDTH = 400
 BOX_HEIGHT = 44
 OFFSET_FROM_CURSOR = QPoint(18, 34)   # below the cursor and the buddy dot
 
@@ -48,6 +48,7 @@ class AskBox(QWidget):
     # Signals are how a Qt object tells the rest of the program something
     # happened. Other code "connects" a function to them.
     submitted = pyqtSignal(str)   # the owner pressed Enter; carries the question
+    submitted_for_area = pyqtSignal(str)   # Shift+Enter: choose part of the screen first
     cancelled = pyqtSignal()      # the owner pressed Esc or clicked away
     escaped = pyqtSignal()        # the owner pressed Esc while typing in the box
 
@@ -69,7 +70,7 @@ class AskBox(QWidget):
         self.setFixedSize(BOX_WIDTH, BOX_HEIGHT)
 
         self.input = QLineEdit()
-        self.input.setPlaceholderText("Ask about your screen…")
+        self.input.setPlaceholderText("Ask about your screen…   (Shift+Enter: pick an area)")
         self.input.setFrame(False)
         self.input.setStyleSheet(
             f"background: transparent; color: {INK.name()}; font-size: 15px;"
@@ -163,8 +164,13 @@ class AskBox(QWidget):
         question = self.input.text().strip()
         if not question:
             return   # ignore Enter on an empty box
+        # Was Shift held down while Enter was pressed?
+        shift_held = bool(QGuiApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
         self.close_box()
-        self.submitted.emit(question)
+        if shift_held:
+            self.submitted_for_area.emit(question)
+        else:
+            self.submitted.emit(question)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

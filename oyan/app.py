@@ -5,6 +5,7 @@ Each part lives in its own file and knows nothing about the others:
 * handwriting.py - the written answer
 * marks.py    - circles, underlines and arrows
 * doodles.py  - the idle sketches
+* region.py   - dragging a box to send only part of the screen
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -21,6 +22,7 @@ from oyan import capture, hotkey, marks
 from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
+from oyan.region import RegionSelector
 
 
 NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
@@ -36,6 +38,12 @@ class Oyan:
 
         self.ask_box = AskBox()
         self.ask_box.submitted.connect(self.on_question)
+        self.ask_box.submitted_for_area.connect(self.on_question_for_area)
+
+        self.region = RegionSelector()
+        self.region.selected.connect(self.on_area_selected)
+        self.region.cancelled.connect(self.on_area_cancelled)
+        self.area = None         # the rectangle chosen with Shift+Enter, if any
         self.ask_box.escaped.connect(self.on_escape)
 
         self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape)
@@ -106,21 +114,30 @@ class Oyan:
             self.ask_box.close_box()
         self.overlay.wipe_board()
 
-    def on_question(self, question):
-        """The owner pressed Enter. This is the ONLY place a capture starts."""
-        if not capture.has_permission():
-            capture.request_permission()
-            print(
-                "Oyan needs Screen Recording permission to see your screen.\n"
-                "  1. Open System Settings > Privacy & Security > Screen & System Audio Recording.\n"
-                "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
-                "  3. Quit Oyan with Ctrl+C and start it again."
-            )
-            return
+    def _ready_to_capture(self):
+        """Check the Screen Recording permission; explain if it is missing."""
+        if capture.has_permission():
+            return True
+        capture.request_permission()
+        print(
+            "Oyan needs Screen Recording permission to see your screen.\n"
+            "  1. Open System Settings > Privacy & Security > Screen & System Audio Recording.\n"
+            "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
+            "  3. Quit Oyan with Ctrl+C and start it again."
+        )
+        return False
 
+    # Privacy rule: a capture starts ONLY in the two functions below, and both
+    # run only because the owner pressed Enter in the ask box.
+
+    def on_question(self, question):
+        """Enter: send the whole screen the cursor is on."""
+        if not self._ready_to_capture():
+            return
         self.ai.cancel()   # forget an earlier question that is still waiting
         self.overlay.thinking = False
         self.question = question
+        self.area = None
 
         # Hide the buddy and the answers on the board so they are not in the
         # picture, and wait a moment so the ask box has really gone and your
@@ -128,11 +145,35 @@ class Oyan:
         self.overlay.set_board_visible(False)
         QTimer.singleShot(250, self.take_screenshot)
 
-    def take_screenshot(self):
-        # Capture the monitor the cursor is on.
+    def on_question_for_area(self, question):
+        """Shift+Enter: let the owner drag a box first; only that part is sent."""
+        if not self._ready_to_capture():
+            return
+        self.ai.cancel()
+        self.overlay.thinking = False
+        self.question = question
+        self.overlay.set_board_visible(False)
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        self.region.open_on(screen)
+
+    def on_area_selected(self, rect):
+        self.area = rect
+        bring_to_front(app_in_front())   # give the keyboard back to your app
+        # Wait for the dimming to disappear before taking the picture.
+        QTimer.singleShot(250, self.take_screenshot)
+
+    def on_area_cancelled(self):
+        """Esc while choosing an area: nothing is captured, nothing is sent."""
+        self.overlay.set_board_visible(True)
+        bring_to_front(app_in_front())
+
+    def take_screenshot(self):
+        # Capture the chosen area, or else the whole monitor the cursor is on.
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        rect = self.area if self.area is not None else screen.geometry()
+        self.area = None
         try:
-            self.screenshot = capture.capture_screen(screen)
+            self.screenshot = capture.capture_rect(rect)
         except Exception as error:
             print(f"Could not take the screenshot: {error}")
             return

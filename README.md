@@ -114,6 +114,10 @@ rocket, a sun and seven others), admires it for a few seconds, and lets it
 fade. Move the mouse and it comes straight back. The doodles are built into
 the program: no AI call, no screenshot, nothing sent.
 
+**9. Region select.** Send a question with **Shift+Enter** instead of Enter
+and the screen dims: drag a box over the part you want Oyan to look at. Only
+that rectangle is captured and sent. Esc cancels and sends nothing.
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT

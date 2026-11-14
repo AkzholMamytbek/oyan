@@ -71,10 +71,15 @@ def delete_screenshot():
 
 
 def capture_screen(screen):
-    """Take a picture of one monitor and save it. Returns a Screenshot."""
+    """Take a picture of one whole monitor. Returns a Screenshot."""
+    return capture_rect(screen.geometry())   # this monitor's rectangle, in points
+
+
+def capture_rect(rect):
+    """Take a picture of one rectangle of the desktop (a QRect in global
+    screen points) and save it. Returns a Screenshot."""
     DATA_FOLDER.mkdir(exist_ok=True)
     DATA_FOLDER.chmod(0o700)   # 700 = only your Mac user account may open the folder
-    rect = screen.geometry()   # this monitor's rectangle, in points
 
     # -x: no camera sound.  -R: capture only this rectangle.
     subprocess.run(
