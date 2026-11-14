@@ -25,7 +25,7 @@ BOX_WIDTH = 400
 BOX_HEIGHT = 44
 OFFSET_FROM_CURSOR = QPoint(18, 34)   # below the cursor and the buddy dot
 
-PLACEHOLDER_NEW = "Ask about your screen…   (Shift+Enter: pick an area)"
+PLACEHOLDER_NEW = "Ask about your screen…   (Shift+Enter: pick an area)"   # /green and /burgundy change Oyan's colour
 PLACEHOLDER_FOLLOW_UP = "Ask more…   (Shift+Enter: pick an area)"
 
 PAPER = QColor(255, 250, 235)         # warm paper colour

@@ -173,14 +173,14 @@ just a circle. The idle doodles are also sturdier: a small wobble of the
 mouse no longer stops one half-drawn.
 
 **16. Spoken answers.** Oyan can read its answers aloud with the voice built
-into macOS, entirely on your Mac. By default it speaks only when you asked by
-voice; change that with `python -m oyan --voice on` (or `off`, or `auto`).
-Esc stops it mid-sentence.
+into macOS, entirely on your Mac. It is off by default; turn it on with
+`python -m oyan --voice on` (or `auto` to speak only when you asked by
+voice). Esc stops it mid-sentence.
 
 **17. Asking by voice.** Press **Control + Option + V**, speak, and press it
-again. The dot turns red while the microphone is on. A speech-recognition
-model (Whisper) running on your Mac turns what you said into text and puts it
-in the ask box for you to check; nothing is captured or sent until you press
+again. Oyan turns red while the microphone is on. A speech-recognition model
+(Whisper) running on your Mac turns what you said into text, and the question
+is sent at once with a fresh screenshot, as if you had typed it and pressed
 Enter. Your voice never leaves the Mac. One-time setup:
 
 ```bash
@@ -193,6 +193,10 @@ macOS will ask for Microphone permission for the app you start Oyan from.
 AI program is started while you are still typing, the answer is written
 before the circles and arrows are drawn, and the animations are quicker.
 An answer takes about four seconds from Enter to fully written.
+
+**19. A new look.** Oyan is now a small triangle, like the tip of a mouse
+arrow, in burgundy or royal green. Type `/green` or `/burgundy` in the ask
+box to switch; the choice is remembered.
 
 ## Credits
 

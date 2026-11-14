@@ -4,9 +4,9 @@ Nothing here uses the internet: we run `say`, the small program that comes
 with every Mac and turns text into speech on the Mac itself.
 
 When does Oyan speak?
-    auto  (the default) only when you ASKED by voice
+    off   (the default) never; answers are only written
     on    every answer
-    off   never
+    auto  only when you ASKED by voice
 Change it with:  python -m oyan --voice on   (or off, or auto)
 """
 
@@ -18,8 +18,8 @@ MODES = ("auto", "on", "off")
 
 
 def get_mode():
-    mode = settings.load().get("voice", "auto")
-    return mode if mode in MODES else "auto"
+    mode = settings.load().get("voice", "off")
+    return mode if mode in MODES else "off"
 
 
 def set_mode(mode):

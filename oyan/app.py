@@ -25,10 +25,10 @@ import math
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
 
-from oyan import blocked, capture, history, hotkey, marks
+from oyan import blocked, capture, history, hotkey, marks, settings
 from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
-from oyan.overlay import OverlayController
+from oyan.overlay import BUDDY_COLORS, OverlayController
 from oyan.region import RegionSelector
 from oyan.speak import Speaker
 
@@ -43,6 +43,9 @@ class Oyan:
     def __init__(self, app):
         self.overlay = OverlayController(app)
 
+        saved_color = settings.load().get("color")
+        if saved_color in BUDDY_COLORS:
+            self.overlay.color_name = saved_color
         self.overlay.on_note_finished = self.show_box_under
         self.overlay.on_note_removed = self.on_note_removed
         # No idle doodles while you are typing a question or waiting for an answer.
@@ -152,9 +155,9 @@ class Oyan:
             self.ask_box.open_near(QCursor.pos())
 
     # --- Asking by voice -----------------------------------------------------
-    # Press the voice hotkey, speak, press it again. What you said is put into
-    # the ask box for you to check; nothing is captured or sent until you
-    # press Enter there, exactly as when you type.
+    # Press the voice hotkey, speak, press it again. Your words are turned
+    # into text on this Mac and the question is sent at once, with a fresh
+    # screenshot, exactly as if you had typed it and pressed Enter.
 
     def on_voice_hotkey(self):
         if self.listener is None:
@@ -189,9 +192,9 @@ class Oyan:
         if not text:
             self.overlay.show_answer("I did not catch any words. Try again a little closer to the microphone.", None)
             return
+        # Send it straight away: speaking the question is the whole request.
         self.next_question_by_voice = True
-        self._open_box()
-        self.ask_box.input.setText(text)   # check it, change it if needed, press Enter
+        self.on_question(text)
 
     def on_voice_failed(self, message):
         self.overlay.listening = False
@@ -214,6 +217,23 @@ class Oyan:
         self.overlay.wipe_board()
         # A clean board is a clean start: forget the conversation.
         self.exchanges = []
+
+    def run_command(self, text):
+        """Things typed in the ask box that start with "/" are commands for
+        Oyan itself, not questions. Returns True if `text` was a command."""
+        if not text.startswith("/"):
+            return False
+        words = text[1:].lower().replace("color", "").replace("colour", "").split()
+        name = words[0] if words else ""
+        if name in BUDDY_COLORS:
+            self.overlay.color_name = name
+            all_settings = settings.load()
+            all_settings["color"] = name
+            settings.save(all_settings)
+        else:
+            choices = ", ".join("/" + color for color in BUDDY_COLORS)
+            self.overlay.show_answer(f"I know these commands: {choices}", None)
+        return True
 
     def _note_how_it_was_asked(self):
         """Remember whether this question was spoken (then the answer is too)."""
@@ -254,6 +274,8 @@ class Oyan:
         wiped the board) are sent along as text, so "and the other one?"
         still makes sense.
         """
+        if self.run_command(question):
+            return   # it was a command such as /green, not a question
         self.steps = []   # a new question ends any step-by-step answer
         self.speaker.stop()
         self._note_how_it_was_asked()
@@ -272,6 +294,8 @@ class Oyan:
 
     def on_question_for_area(self, question):
         """Shift+Enter: let the owner drag a box first; only that part is sent."""
+        if self.run_command(question):
+            return
         self.steps = []
         self.speaker.stop()
         self._note_how_it_was_asked()

@@ -48,7 +48,7 @@ from AppKit import (
     NSWindowStyleMaskNonactivatingPanel,
 )
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen
+from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import QWidget
 
 from oyan.doodles import make_doodle
@@ -56,7 +56,7 @@ from oyan.handwriting import Note
 
 # --- Things you can tweak -------------------------------------------------
 
-BUDDY_RADIUS = 7            # size of the buddy dot, in points
+BUDDY_RADIUS = 10           # roughly half the buddy's size, in points (used for repainting)
 OFFSET_FROM_CURSOR = (20, 22)  # sit below-right of the arrow, not under it
 FOLLOW_SPEED = 0.18         # 0..1, how much of the gap is closed per tick
 BOB_HEIGHT = 2.0            # how far it floats up and down, in points
@@ -86,9 +86,18 @@ DOODLE_CANCEL_DISTANCE = 45 # the mouse must move this far to interrupt a doodle
 ADMIRE_SECONDS = 8          # how long a finished doodle stays
 DOODLE_FADE_SECONDS = 0.8   # how long it takes to fade away
 
-BUDDY_COLOR = QColor(255, 153, 51)     # warm orange
-LISTENING_COLOR = QColor(232, 60, 60)  # red while the microphone is on
-BUDDY_OUTLINE = QColor(60, 40, 20)     # dark brown, like pencil
+# Oyan's two colours. Switch by typing /green or /burgundy in the ask box.
+BUDDY_COLORS = {
+    "burgundy": QColor(128, 0, 32),
+    "green": QColor(19, 128, 52),       # royal green
+}
+DEFAULT_COLOR = "burgundy"
+LISTENING_COLOR = QColor(255, 70, 70)  # bright red while the microphone is on
+BUDDY_OUTLINE = QColor(255, 250, 235)  # a pale edge, so it shows on dark and light screens
+
+# The triangle's corners, measured from its middle, in points: the tip is at
+# the top left, like a mouse arrow.
+BUDDY_SHAPE = [(-8, -9), (10, -1), (-2, 10)]
 
 
 def show_on_every_desktop(widget, takes_keyboard=False):
@@ -175,16 +184,16 @@ class ScreenOverlay(QWidget):
         if not controller.buddy_visible:
             return   # hidden while a screenshot is being taken
 
+        # Oyan is a small triangle, shaped like the tip of a mouse arrow.
+        # BUDDY_SHAPE lists its three corners around the middle (0, 0); here
+        # they are scaled (the pulse) and moved to where the buddy is.
         pos = controller.buddy_pos
-        radius = BUDDY_RADIUS * controller.pulse()
-        painter.setPen(QPen(BUDDY_OUTLINE, 1.5))
-        painter.setBrush(LISTENING_COLOR if controller.listening else BUDDY_COLOR)
-        painter.drawEllipse(pos, radius, radius)
-
-        # A tiny highlight so the dot looks a bit like a marble.
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 170))
-        painter.drawEllipse(pos + QPointF(-2.5, -2.5), 2, 2)
+        scale = controller.pulse()
+        triangle = QPolygonF([pos + QPointF(x, y) * scale for x, y in BUDDY_SHAPE])
+        color = LISTENING_COLOR if controller.listening else BUDDY_COLORS[controller.color_name]
+        painter.setPen(QPen(BUDDY_OUTLINE, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.setBrush(color)
+        painter.drawPolygon(triangle)
 
 
 class OverlayController:
@@ -197,6 +206,7 @@ class OverlayController:
         self.buddy_visible = True
         self.thinking = False   # True while waiting for the AI: the buddy pulses
         self.listening = False  # True while the microphone is on: the buddy is red
+        self.color_name = DEFAULT_COLOR   # which of BUDDY_COLORS the buddy wears
         self.start_time = time.monotonic()
         self.last_tick = self.start_time
 
