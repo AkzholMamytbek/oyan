@@ -73,15 +73,25 @@ SYSTEM_PROMPT = (
     "corners (use it for a button, icon or field); [UNDERLINE:x1,y1,x2,y2] "
     "underlines the text inside that box; [ARROW:x1,y1,x2,y2] draws an arrow "
     "from the first point to the second (use it to show a direction or to "
-    "connect two things). Make boxes fit the thing tightly."
+    "connect two things). Make boxes fit the thing tightly. "
+    "Exception, for how-to questions: if doing what is asked needs two or more "
+    "separate clicks or actions, do not write sentences and do not use the tags "
+    "above. Reply only with step tags, in order, at most six: "
+    "[STEP:x,y:short instruction] where x,y is where to click for that step on "
+    "this screenshot, or [STEP:none:short instruction] when that place is not "
+    "visible yet (for example inside a menu that is still closed). Keep each "
+    "instruction under ten words."
 )
 
 # Matches [POINT:123,456:some label]  (the label part is optional).
 POINT_TAG = re.compile(r"\[POINT:\s*(\d+)\s*,\s*(\d+)\s*(?::([^\]]*))?\]")
 # Matches [CIRCLE:1,2,3,4], [UNDERLINE:1,2,3,4] and [ARROW:1,2,3,4].
 MARK_TAG = re.compile(r"\[(CIRCLE|UNDERLINE|ARROW):\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]")
+# Matches [STEP:120,45:Open the File menu] and [STEP:none:Choose Export].
+STEP_TAG = re.compile(r"\[STEP:\s*(?:(\d+)\s*,\s*(\d+)|none)\s*:([^\]]*)\]")
 # Matches any of our tags at all, so we can remove them from the text.
-ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW):[^\]]*\]")
+ANY_TAG = re.compile(r"\[(?:POINT|CIRCLE|UNDERLINE|ARROW|STEP):[^\]]*\]")
+MAX_STEPS = 6
 MAX_MARKS = 3
 MAX_REMEMBERED = 6     # how many earlier questions are sent along with a follow-up
 
@@ -92,6 +102,7 @@ class Answer:
     point: tuple = None   # (x, y) in screenshot pixels, or None
     label: str = ""       # short name of the thing pointed at
     marks: list = field(default_factory=list)   # e.g. [("circle", x1, y1, x2, y2)]
+    steps: list = field(default_factory=list)   # e.g. [((x, y), "Open File"), (None, "Choose Export")]
 
 
 def parse_reply(reply):
@@ -108,8 +119,20 @@ def parse_reply(reply):
         numbers = [int(match.group(i)) for i in (2, 3, 4, 5)]   # x1, y1, x2, y2
         marks.append((kind, *numbers))
 
+    steps = []
+    for match in STEP_TAG.finditer(reply):
+        where = (int(match.group(1)), int(match.group(2))) if match.group(1) else None
+        steps.append((where, match.group(3).strip()))
+    steps = steps[:MAX_STEPS]
+
     text = ANY_TAG.sub("", reply).strip()
-    return Answer(text=text, point=point, label=label, marks=marks[:MAX_MARKS])
+    if len(steps) >= 2:
+        # A step-by-step answer: the "text" is the numbered list of steps
+        # (used for the history and for follow-up questions).
+        text = " ".join(f"{number}. {instruction}" for number, (_, instruction) in enumerate(steps, 1))
+    else:
+        steps = []
+    return Answer(text=text, point=point, label=label, marks=marks[:MAX_MARKS], steps=steps)
 
 
 def find_command():

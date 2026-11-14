@@ -18,7 +18,9 @@ This file decides what happens when: hotkey pressed -> open the box,
 question entered -> take a screenshot -> ask the AI model -> show the answer.
 """
 
-from PyQt6.QtCore import QPoint, QRectF, QTimer
+import math
+
+from PyQt6.QtCore import QPoint, QPointF, QRectF, QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
 
 from oyan import blocked, capture, history, hotkey, marks
@@ -29,6 +31,8 @@ from oyan.region import RegionSelector
 
 
 NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
+STEP_CLICK_RADIUS = 90   # a click this close to a step's spot counts as doing the step
+STEP_CIRCLE = 16         # half the size of the circle drawn around a step's spot
 
 
 class Oyan:
@@ -50,7 +54,12 @@ class Oyan:
         self.area = None         # the rectangle chosen with Shift+Enter, if any
         self.ask_box.escaped.connect(self.on_escape)
 
-        self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape)
+        self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape, self.on_click)
+
+        # Step-by-step mode (see start_steps).
+        self.steps = []          # [(spot on screen or None, instruction), ...]
+        self.step_index = 0      # which step is showing
+        self.step_note = None    # the note of the step that is showing
 
         self.ai = AskAI()
         self.ai.answered.connect(self.on_answer)
@@ -96,6 +105,8 @@ class Oyan:
     def show_box_under(self, note):
         """An answer has just been written: put a waiting typing box under it.
         It does not take the keyboard until you click in it."""
+        if self.steps and self.step_index < len(self.steps) - 1:
+            return   # in the middle of a step-by-step answer: no box yet
         if not self.ask_box.is_typing():   # do not disturb if you are typing
             self.ask_box.show_attached(self._place_under(note))
 
@@ -120,6 +131,7 @@ class Oyan:
             self.overlay.thinking = False
         if self.ask_box.isVisible():
             self.ask_box.close_box()
+        self.steps = []
         self.overlay.wipe_board()
         # A clean board is a clean start: forget the picture and the conversation.
         self.image_bytes = None
@@ -158,6 +170,7 @@ class Oyan:
         no new picture; it asks again about the one already sent, together
         with the earlier questions and answers.
         """
+        self.steps = []   # a new question ends any step-by-step answer
         if attached and self.image_bytes is not None and self.exchanges:
             self.ask_follow_up(question)
             return
@@ -182,6 +195,7 @@ class Oyan:
 
     def on_question_for_area(self, question):
         """Shift+Enter: let the owner drag a box first; only that part is sent."""
+        self.steps = []
         if not self._ready_to_capture():
             return
         self.ai.cancel()
@@ -231,6 +245,12 @@ class Oyan:
     def on_answer(self, answer):
         """The AI replied. `answer` has the text and the point (see ai.py)."""
         self.overlay.thinking = False
+        self._remember(answer)
+
+        if answer.steps:
+            self.start_steps(answer.steps)
+            return
+
         spot = None
         if answer.point is not None:
             # Turn the position in the picture into a position on the screen.
@@ -249,6 +269,9 @@ class Oyan:
                 drawn.append(marks.arrow(first, second))
 
         self.overlay.show_answer(answer.text, spot, drawn)
+
+    def _remember(self, answer):
+        """Write the question and answer to the history, and keep them for follow-ups."""
         try:
             history.record(
                 self.question, answer.text, self.ai.last_picture_name,
@@ -256,7 +279,65 @@ class Oyan:
             )
         except OSError as error:
             print(f"Could not write the history: {error}")
-        self.exchanges.append((self.question, answer.text))   # remember for follow-ups
+        self.exchanges.append((self.question, answer.text))
+
+    # --- Step-by-step mode ---------------------------------------------------
+    # For "how do I..." questions the AI may answer with a list of steps.
+    # Oyan shows one step at a time: it circles the place to click, waits
+    # until you click there, then moves on to the next step.
+    #
+    # Privacy rule: Oyan does NOT take a new screenshot after each click. All
+    # steps were planned from the one picture you sent. A step whose place
+    # was not visible in it (inside a closed menu, say) is shown in words only.
+
+    def start_steps(self, steps):
+        self.steps = []
+        for where, instruction in steps:
+            spot = self.screenshot.to_screen(*where) if where is not None else None
+            self.steps.append((spot, instruction))
+        self.step_note = None
+        self.show_step(0)
+
+    def show_step(self, index):
+        if index >= len(self.steps):
+            return
+        self.step_index = index
+        if self.step_note is not None:
+            self.overlay.remove_note(self.step_note)   # the step just done
+
+        spot, instruction = self.steps[index]
+        text = f"Step {index + 1} of {len(self.steps)}: {instruction}"
+        drawn = []
+        if spot is not None:
+            around = QRectF(spot.x() - STEP_CIRCLE, spot.y() - STEP_CIRCLE, 2 * STEP_CIRCLE, 2 * STEP_CIRCLE)
+            drawn.append(marks.circle(around))
+
+        if index == len(self.steps) - 1:
+            hint = None   # the last step: the usual reminder and typing box
+        elif spot is not None:
+            hint = "Click it to continue    Esc: stop"
+        else:
+            hint = "Click anywhere to continue    Esc: stop"
+        self.step_note = self.overlay.show_answer(text, spot, drawn, hint=hint)
+
+    def on_click(self):
+        """The mouse was clicked somewhere in another app."""
+        if not self.steps or self.step_index >= len(self.steps) - 1:
+            return   # not in step-by-step mode, or already on the last step
+        if self.overlay.mode != "follow":
+            return   # the current step is still being drawn or written
+        spot, _ = self.steps[self.step_index]
+        if spot is not None:
+            away = QPointF(QCursor.pos()) - spot
+            if math.hypot(away.x(), away.y()) > STEP_CLICK_RADIUS:
+                return   # a click somewhere else; keep waiting
+        # Give the app a moment to react to the click, then show the next step.
+        next_index = self.step_index + 1
+        QTimer.singleShot(350, lambda: self._advance_to(next_index))
+
+    def _advance_to(self, index):
+        if self.steps and index == self.step_index + 1:   # still the step we expect
+            self.show_step(index)
 
     def on_ai_failed(self, message):
         self.overlay.thinking = False

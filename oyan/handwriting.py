@@ -66,6 +66,7 @@ class Note:
         self.progress = 0.0     # how many letters have been written so far
         self.wipe = 0.0         # 0 = untouched, 1 = completely wiped away
         self.show_hint = True   # only the newest note shows the reminder
+        self.hint_text = HINT_TEXT
         self.marks = []         # circles, underlines and arrows drawn for this answer
 
         self.font = QFont(FONT_NAME, FONT_SIZE)
@@ -214,12 +215,12 @@ class Note:
         # Once everything is written, a small reminder of what you can do next.
         if self.finished() and self.show_hint:
             painter.setFont(QFont(".AppleSystemUIFont", HINT_SIZE))
-            hint_width = painter.fontMetrics().horizontalAdvance(HINT_TEXT) + 16
+            hint_width = painter.fontMetrics().horizontalAdvance(self.hint_text) + 16
             hint = QRectF(self.box.left(), self.box.bottom() + 5, hint_width, HINT_HEIGHT - 6)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(40, 30, 20, 190))        # dark, slightly see-through
             painter.drawRoundedRect(hint, 9, 9)
             painter.setPen(QColor(255, 250, 235))
-            painter.drawText(hint, Qt.AlignmentFlag.AlignCenter, HINT_TEXT)
+            painter.drawText(hint, Qt.AlignmentFlag.AlignCenter, self.hint_text)
 
         painter.restore()

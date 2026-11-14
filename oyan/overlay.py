@@ -250,12 +250,14 @@ class OverlayController:
 
     # --- Showing and removing an answer -------------------------------------
 
-    def show_answer(self, text, spot, marks=()):
+    def show_answer(self, text, spot, marks=(), hint=None):
         """Draw the `marks`, then fly to `spot` and write `text` beside it.
 
         `spot` is a global screen position (QPointF), or None if the AI did
         not point at anything; then the note is written near the buddy.
         `marks` is a list of Mark objects (see marks.py); it may be empty.
+        `hint` replaces the small reminder shown under the note, if given.
+        Returns the new note.
         """
         self.remove_doodle()
         # An unfinished wipe or older reminders should not linger.
@@ -283,12 +285,23 @@ class OverlayController:
         )
         self.notes.append(new_note)
         new_note.marks = list(marks)   # they belong to this answer and are wiped with it
+        if hint is not None:
+            new_note.hint_text = hint
         self.writing = new_note
         self.spot = spot
 
         self.to_draw = list(marks)
         self.drawing = None
         self._draw_next()
+        return new_note
+
+    def remove_note(self, note):
+        """Take one answer (and its marks) off the board at once."""
+        if note in self.notes:
+            self._repaint(note.bounds())
+            for mark in note.marks:
+                self._repaint(mark.bounds())
+            self.notes.remove(note)
 
     def _draw_next(self):
         """Draw the next waiting mark; when none are left, go and write."""

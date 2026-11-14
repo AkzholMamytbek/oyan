@@ -18,6 +18,7 @@ We use PyObjC here, a bridge that lets Python call macOS's own functions.
 from AppKit import (
     NSEvent,
     NSEventMaskKeyDown,
+    NSEventMaskLeftMouseDown,
     NSEventModifierFlagCommand,
     NSEventModifierFlagControl,
     NSEventModifierFlagOption,
@@ -57,9 +58,13 @@ class GlobalHotkey:
     front. We only listen: the other app still receives its Esc as usual.
     """
 
-    def __init__(self, on_pressed, on_escape):
+    def __init__(self, on_pressed, on_escape, on_click=None):
         self.on_pressed = on_pressed
         self.on_escape = on_escape
+        # Called when the mouse button goes down in another app. Used by the
+        # step-by-step mode to notice that you did a step. We learn only THAT
+        # a click happened; the other app still receives it as usual.
+        self.on_click = on_click
         self._monitors = []
 
     def start(self):
@@ -71,6 +76,12 @@ class GlobalHotkey:
                 NSEventMaskKeyDown, self._on_local_key
             ),
         ]
+        if self.on_click is not None:
+            self._monitors.append(
+                NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                    NSEventMaskLeftMouseDown, lambda event: self.on_click()
+                )
+            )
 
     def stop(self):
         for monitor in self._monitors:

@@ -160,6 +160,13 @@ python -m oyan --history save file   # print the entries containing those words
 python -m oyan --clear-history       # delete the history
 ```
 
+**14. Step-by-step mode.** Ask how to do something that takes several
+clicks and Oyan answers one step at a time: it circles where to click, writes
+"Step 1 of 4: ...", and waits. Click the circled spot and it moves on to the
+next step. Esc stops. All steps are planned from the one picture you sent;
+Oyan does not take new screenshots as you click, so a step hidden inside a
+closed menu is given in words only.
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT
