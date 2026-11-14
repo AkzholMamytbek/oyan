@@ -9,6 +9,7 @@ Each part lives in its own file and knows nothing about the others:
 * sent_log.py - the record of everything sent to the AI
 * blocked.py  - apps Oyan refuses to photograph
 * history.py  - past questions and answers, searchable
+* speak.py    - reading answers aloud with the Mac's own voice
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -28,6 +29,7 @@ from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
 from oyan.region import RegionSelector
+from oyan.speak import Speaker
 
 
 NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
@@ -64,6 +66,9 @@ class Oyan:
         self.ai = AskAI()
         self.ai.answered.connect(self.on_answer)
         self.ai.failed.connect(self.on_ai_failed)
+
+        self.speaker = Speaker()
+        self.asked_by_voice = False   # was the current question spoken?
 
         self.question = None     # the question being worked on right now
         self.screenshot = None   # the latest screenshot (its size and place on screen)
@@ -132,6 +137,7 @@ class Oyan:
         if self.ask_box.isVisible():
             self.ask_box.close_box()
         self.steps = []
+        self.speaker.stop()
         self.overlay.wipe_board()
         # A clean board is a clean start: forget the picture and the conversation.
         self.image_bytes = None
@@ -171,6 +177,7 @@ class Oyan:
         with the earlier questions and answers.
         """
         self.steps = []   # a new question ends any step-by-step answer
+        self.speaker.stop()
         if attached and self.image_bytes is not None and self.exchanges:
             self.ask_follow_up(question)
             return
@@ -246,6 +253,8 @@ class Oyan:
         """The AI replied. `answer` has the text and the point (see ai.py)."""
         self.overlay.thinking = False
         self._remember(answer)
+        if not answer.steps and self.speaker.should_speak(self.asked_by_voice):
+            self.speaker.speak(answer.text)
 
         if answer.steps:
             self.start_steps(answer.steps)
@@ -313,6 +322,8 @@ class Oyan:
 
         spot, instruction = self.steps[index]
         text = f"Step {index + 1} of {len(self.steps)}: {instruction}"
+        if self.speaker.should_speak(self.asked_by_voice):
+            self.speaker.speak(text)
         drawn = []
         if spot is not None:
             around = QRectF(spot.x() - STEP_CIRCLE, spot.y() - STEP_CIRCLE, 2 * STEP_CIRCLE, 2 * STEP_CIRCLE)

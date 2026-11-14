@@ -5,7 +5,7 @@ You ask a question about what is on your screen; Oyan looks at a screenshot,
 glides to the relevant spot, and writes the answer right there in a
 handwriting style.
 
-> **Status: versions 1 and 2 are done; version 3 is in progress.** See
+> **Status: versions 1 to 3 are done; version 4 (voice) is in progress.** See
 > [Updates](#updates) for what works so far.
 
 ## What makes Oyan different
@@ -171,6 +171,11 @@ closed menu is given in words only.
 sketches it on your screen with real pen strokes, part by part, instead of
 just a circle. The idle doodles are also sturdier: a small wobble of the
 mouse no longer stops one half-drawn.
+
+**16. Spoken answers.** Oyan can read its answers aloud with the voice built
+into macOS, entirely on your Mac. By default it speaks only when you asked by
+voice; change that with `python -m oyan --voice on` (or `off`, or `auto`).
+Esc stops it mid-sentence.
 
 ## Credits
 

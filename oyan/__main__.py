@@ -9,6 +9,8 @@ Extra commands:
     python -m oyan --blocked      list the apps Oyan refuses to photograph
     python -m oyan --block NAME   add an app to that list
     python -m oyan --unblock NAME remove an app from it
+    python -m oyan --voice MODE   read answers aloud: on, off, or auto (only
+                                  when you asked by voice; the default)
     python -m oyan --set-key      save an optional API key (it is not shown)
     python -m oyan --remove-key   delete the saved key
 """
@@ -20,7 +22,7 @@ import sys
 from AppKit import NSApp, NSApplicationActivationPolicyAccessory
 from PyQt6.QtWidgets import QApplication
 
-from oyan import blocked, history, sent_log, settings
+from oyan import blocked, history, sent_log, settings, speak
 from oyan.app import Oyan
 
 
@@ -56,6 +58,15 @@ def main():
         print("Oyan will not take a screenshot while any of these is on screen:")
         for item in blocked.get_list():
             print(f"  - {item}")
+        return
+    if option == "--voice":
+        mode = sys.argv[2].lower() if len(sys.argv) > 2 else ""
+        if mode in speak.MODES:
+            speak.set_mode(mode)
+        elif mode:
+            print("Choose one of: on, off, auto")
+            return
+        print(f"Reading answers aloud: {speak.get_mode()}")
         return
     if option == "--history":
         words = sys.argv[2:]
