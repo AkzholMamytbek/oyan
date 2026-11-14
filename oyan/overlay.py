@@ -80,6 +80,7 @@ ADMIRE_SECONDS = 8          # how long a finished doodle stays
 DOODLE_FADE_SECONDS = 0.8   # how long it takes to fade away
 
 BUDDY_COLOR = QColor(255, 153, 51)     # warm orange
+LISTENING_COLOR = QColor(232, 60, 60)  # red while the microphone is on
 BUDDY_OUTLINE = QColor(60, 40, 20)     # dark brown, like pencil
 
 
@@ -165,7 +166,7 @@ class ScreenOverlay(QWidget):
         pos = controller.buddy_pos
         radius = BUDDY_RADIUS * controller.pulse()
         painter.setPen(QPen(BUDDY_OUTLINE, 1.5))
-        painter.setBrush(BUDDY_COLOR)
+        painter.setBrush(LISTENING_COLOR if controller.listening else BUDDY_COLOR)
         painter.drawEllipse(pos, radius, radius)
 
         # A tiny highlight so the dot looks a bit like a marble.
@@ -183,6 +184,7 @@ class OverlayController:
         self.buddy_pos = QPointF(QCursor.pos())  # start at the cursor
         self.buddy_visible = True
         self.thinking = False   # True while waiting for the AI: the buddy pulses
+        self.listening = False  # True while the microphone is on: the buddy is red
         self.start_time = time.monotonic()
         self.last_tick = self.start_time
 
@@ -262,7 +264,7 @@ class OverlayController:
 
     def pulse(self):
         """Size multiplier for the buddy: 1.0 normally, breathing while thinking."""
-        if not self.thinking:
+        if not (self.thinking or self.listening):
             return 1.0
         seconds = time.monotonic() - self.start_time
         return 1.0 + 0.3 * math.sin(seconds * 8)
@@ -431,6 +433,7 @@ class OverlayController:
             and self.doodle is None
             and not self.notes
             and not self.thinking
+            and not self.listening
             and self.buddy_visible
             and now - self.still_since >= IDLE_SECONDS
             and now >= self.next_doodle_at

@@ -6,3 +6,6 @@ pyobjc-framework-Cocoa==13.0                 # talk to macOS (hotkey, app focus)
 pyobjc-framework-Quartz==13.0                # screen capture permission check
 pyobjc-framework-ApplicationServices==13.0   # Accessibility permission check
 anthropic==2.8.0                             # only used with the optional API key
+faster-whisper==1.2.1                        # speech to text, runs on this Mac
+sounddevice==0.5.6                           # records from the microphone
+numpy==2.5.4                                 # holds the recorded sound as numbers

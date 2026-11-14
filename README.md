@@ -65,6 +65,7 @@ permissions go to the app you start Oyan from (Terminal or Visual Studio Code):
 
 - **Accessibility**, for the hotkey: System Settings > Privacy & Security >
   Accessibility, switch on Terminal (or Visual Studio Code), then restart Oyan.
+- **Microphone**, only if you ask by voice: macOS asks the first time.
 - **Screen Recording**, for the screenshot: System Settings > Privacy &
   Security > Screen & System Audio Recording, switch on the same app, then
   restart Oyan.
@@ -176,6 +177,18 @@ mouse no longer stops one half-drawn.
 into macOS, entirely on your Mac. By default it speaks only when you asked by
 voice; change that with `python -m oyan --voice on` (or `off`, or `auto`).
 Esc stops it mid-sentence.
+
+**17. Asking by voice.** Press **Control + Option + V**, speak, and press it
+again. The dot turns red while the microphone is on. A speech-recognition
+model (Whisper) running on your Mac turns what you said into text and puts it
+in the ask box for you to check; nothing is captured or sent until you press
+Enter. Your voice never leaves the Mac. One-time setup:
+
+```bash
+python -m oyan --setup-voice    # downloads the model, about 150 MB, once
+```
+
+macOS will ask for Microphone permission for the app you start Oyan from.
 
 ## Credits
 

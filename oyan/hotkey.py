@@ -33,6 +33,10 @@ HOTKEY_MODIFIERS = NSEventModifierFlagControl | NSEventModifierFlagOption
 HOTKEY_NAME = "Control + Option + Space"
 ESCAPE_KEY_CODE = 53  # macOS's number for the Esc key
 
+# --- The voice hotkey: Control + Option + V (same modifier keys) ----------
+VOICE_KEY_CODE = 9    # macOS's number for the V key
+VOICE_HOTKEY_NAME = "Control + Option + V"
+
 # When comparing, look only at these four modifier keys (ignore Caps Lock etc.).
 ALL_MODIFIERS = (
     NSEventModifierFlagControl
@@ -58,9 +62,10 @@ class GlobalHotkey:
     front. We only listen: the other app still receives its Esc as usual.
     """
 
-    def __init__(self, on_pressed, on_escape, on_click=None):
+    def __init__(self, on_pressed, on_escape, on_click=None, on_voice=None):
         self.on_pressed = on_pressed
         self.on_escape = on_escape
+        self.on_voice = on_voice   # called when the voice hotkey is pressed
         # Called when the mouse button goes down in another app. Used by the
         # step-by-step mode to notice that you did a step. We learn only THAT
         # a click happened; the other app still receives it as usual.
@@ -93,9 +98,19 @@ class GlobalHotkey:
         modifiers = event.modifierFlags() & ALL_MODIFIERS
         return event.keyCode() == HOTKEY_KEY_CODE and modifiers == HOTKEY_MODIFIERS
 
+    def _is_voice_hotkey(self, event):
+        modifiers = event.modifierFlags() & ALL_MODIFIERS
+        return (
+            self.on_voice is not None
+            and event.keyCode() == VOICE_KEY_CODE
+            and modifiers == HOTKEY_MODIFIERS
+        )
+
     def _on_global_key(self, event):
         if self._is_hotkey(event) and not event.isARepeat():
             self.on_pressed()
+        elif self._is_voice_hotkey(event) and not event.isARepeat():
+            self.on_voice()
         elif event.keyCode() == ESCAPE_KEY_CODE:
             self.on_escape()
 
@@ -106,5 +121,9 @@ class GlobalHotkey:
         if self._is_hotkey(event):
             if not event.isARepeat():
                 self.on_pressed()
+            return None
+        if self._is_voice_hotkey(event):
+            if not event.isARepeat():
+                self.on_voice()
             return None
         return event

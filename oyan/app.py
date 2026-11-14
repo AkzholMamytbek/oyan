@@ -10,6 +10,7 @@ Each part lives in its own file and knows nothing about the others:
 * blocked.py  - apps Oyan refuses to photograph
 * history.py  - past questions and answers, searchable
 * speak.py    - reading answers aloud with the Mac's own voice
+* listen.py   - turning your spoken question into text, on this Mac
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -56,7 +57,9 @@ class Oyan:
         self.area = None         # the rectangle chosen with Shift+Enter, if any
         self.ask_box.escaped.connect(self.on_escape)
 
-        self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape, self.on_click)
+        self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape, self.on_click, self.on_voice_hotkey)
+        self.listener = None             # the microphone part, created on first use
+        self.next_question_by_voice = False
 
         # Step-by-step mode (see start_steps).
         self.steps = []          # [(spot on screen or None, instruction), ...]
@@ -93,6 +96,7 @@ class Oyan:
                 "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
                 "  3. Quit Oyan with Ctrl+C and start it again."
             )
+        print(f"To ask by voice, press {hotkey.VOICE_HOTKEY_NAME}, speak, and press it again.")
         print("To see everything Oyan has sent:  python -m oyan --log")
         print("To search past questions:         python -m oyan --history")
         print("Press Ctrl+C here to quit.")
@@ -120,7 +124,11 @@ class Oyan:
         if self.ask_box.is_typing():
             self.ask_box.close_box()
             return
+        self.next_question_by_voice = False
+        self._open_box()
 
+    def _open_box(self):
+        """Open the ask box for typing: under the newest answer, or at the cursor."""
         note = self.overlay.note
         if note is not None and note.visible:
             # An answer is on screen: type right under it.
@@ -129,8 +137,59 @@ class Oyan:
         else:
             self.ask_box.open_near(QCursor.pos())
 
+    # --- Asking by voice -----------------------------------------------------
+    # Press the voice hotkey, speak, press it again. What you said is put into
+    # the ask box for you to check; nothing is captured or sent until you
+    # press Enter there, exactly as when you type.
+
+    def on_voice_hotkey(self):
+        if self.listener is None:
+            try:
+                # Loaded only now, because these packages are big and would
+                # slow down every start of Oyan otherwise.
+                from oyan import listen
+            except ImportError:
+                self.overlay.show_answer("Voice needs extra packages. Run: pip install -r requirements.txt", None)
+                return
+            if not listen.is_set_up():
+                self.overlay.show_answer("Voice is not set up yet. Run once: python -m oyan --setup-voice", None)
+                return
+            self.listener = listen.Listener()
+            self.listener.heard.connect(self.on_heard)
+            self.listener.failed.connect(self.on_voice_failed)
+
+        if self.listener.is_listening():
+            # Second press: stop recording and work out what was said.
+            self.overlay.listening = False
+            self.overlay.thinking = True
+            self.listener.stop()
+        else:
+            self.speaker.stop()
+            if self.ask_box.isVisible() and not self.ask_box.attached:
+                self.ask_box.close_box()
+            self.overlay.listening = True   # the buddy turns red: the microphone is on
+            self.listener.start()
+
+    def on_heard(self, text):
+        self.overlay.thinking = False
+        if not text:
+            self.overlay.show_answer("I did not catch any words. Try again a little closer to the microphone.", None)
+            return
+        self.next_question_by_voice = True
+        self._open_box()
+        self.ask_box.input.setText(text)   # check it, change it if needed, press Enter
+
+    def on_voice_failed(self, message):
+        self.overlay.listening = False
+        self.overlay.thinking = False
+        self.overlay.show_answer(message, None)
+
     def on_escape(self):
         """Esc: stop waiting for the AI and wipe the board clean."""
+        if self.listener is not None and self.listener.is_listening():
+            self.listener.cancel()          # throw the recording away
+            self.overlay.listening = False
+            return
         if self.ai.is_busy():
             self.ai.cancel()
             self.overlay.thinking = False
@@ -142,6 +201,11 @@ class Oyan:
         # A clean board is a clean start: forget the picture and the conversation.
         self.image_bytes = None
         self.exchanges = []
+
+    def _note_how_it_was_asked(self):
+        """Remember whether this question was spoken (then the answer is too)."""
+        self.asked_by_voice = self.next_question_by_voice
+        self.next_question_by_voice = False
 
     def _ready_to_capture(self):
         """May we take a picture now? Explains why not, if not."""
@@ -178,6 +242,7 @@ class Oyan:
         """
         self.steps = []   # a new question ends any step-by-step answer
         self.speaker.stop()
+        self._note_how_it_was_asked()
         if attached and self.image_bytes is not None and self.exchanges:
             self.ask_follow_up(question)
             return
@@ -203,6 +268,8 @@ class Oyan:
     def on_question_for_area(self, question):
         """Shift+Enter: let the owner drag a box first; only that part is sent."""
         self.steps = []
+        self.speaker.stop()
+        self._note_how_it_was_asked()
         if not self._ready_to_capture():
             return
         self.ai.cancel()

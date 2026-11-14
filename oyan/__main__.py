@@ -9,6 +9,7 @@ Extra commands:
     python -m oyan --blocked      list the apps Oyan refuses to photograph
     python -m oyan --block NAME   add an app to that list
     python -m oyan --unblock NAME remove an app from it
+    python -m oyan --setup-voice  download the speech-recognition model (once)
     python -m oyan --voice MODE   read answers aloud: on, off, or auto (only
                                   when you asked by voice; the default)
     python -m oyan --set-key      save an optional API key (it is not shown)
@@ -58,6 +59,17 @@ def main():
         print("Oyan will not take a screenshot while any of these is on screen:")
         for item in blocked.get_list():
             print(f"  - {item}")
+        return
+    if option == "--setup-voice":
+        from oyan import listen   # imported here because it is slow to load
+        if listen.is_set_up():
+            print("Voice is already set up.")
+        else:
+            print("Downloading the speech-recognition model (about 150 MB). This is the only")
+            print("time voice uses the internet; afterwards it runs entirely on this Mac.")
+            listen.set_up()
+            print("Done.")
+        print("Press Control + Option + V while Oyan runs, speak, and press it again.")
         return
     if option == "--voice":
         mode = sys.argv[2].lower() if len(sys.argv) > 2 else ""
