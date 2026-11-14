@@ -69,7 +69,7 @@ def main():
             print("time voice uses the internet; afterwards it runs entirely on this Mac.")
             listen.set_up()
             print("Done.")
-        print("Press Control + Option + V while Oyan runs, speak, and press it again.")
+        print("Press Option + S while Oyan runs, speak, and press it again.")
         return
     if option == "--voice":
         mode = sys.argv[2].lower() if len(sys.argv) > 2 else ""

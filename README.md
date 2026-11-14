@@ -78,7 +78,7 @@ through it.
 
 ![Oyan as an orange dot next to the cursor](docs/oyan-dot.png)
 
-**2. The hotkey and the ask box.** Press **Control + Option + O** in any
+**2. The hotkey and the ask box.** Press **Option + A** in any
 app and a small text box opens next to the cursor. Enter sends the question,
 Esc closes the box, and you are returned to the app you were in.
 
@@ -177,7 +177,7 @@ into macOS, entirely on your Mac. It is off by default; turn it on with
 `python -m oyan --voice on` (or `auto` to speak only when you asked by
 voice). Esc stops it mid-sentence.
 
-**17. Asking by voice.** Press **Control + Option + V**, speak, and press it
+**17. Asking by voice.** Press **Option + S**, speak, and press it
 again. Oyan turns red while the microphone is on. A speech-recognition model
 (Whisper) running on your Mac turns what you said into text, and the question
 is sent at once with a fresh screenshot, as if you had typed it and pressed
@@ -198,7 +198,7 @@ An answer takes about four seconds from Enter to fully written.
 arrow, in burgundy or royal green. Type `/green` or `/burgundy` in the ask
 box to switch; the choice is remembered.
 
-**20. Your own pen.** Hold **Control + Shift** and drag to draw on the
+**20. Your own pen.** Hold **Option + D** and drag to draw on the
 screen: circle a piece of code, underline a word, point an arrow. Let go of
 the keys and the ask box opens next to your drawing. Your blue marks are in
 the screenshot, so the AI sees exactly what you mean. They stay for that one
@@ -211,6 +211,11 @@ whether it is right and where the first mistake is. Say "show me the
 solution" when you want the whole thing. For problems that are easier to see
 than to read, it draws a small labelled sketch, such as two cars on a road
 with their speeds and the gap between them.
+
+**22. Easy keys.** Three neighbouring keys under the left hand, each with
+Option: **Option + A** to Ask, **Option + S** to Speak, hold **Option + D**
+to Draw. Oyan now takes these keys for itself, so they no longer type odd
+characters into the app you are in or switch the keyboard language.
 
 ## Credits
 

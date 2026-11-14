@@ -178,7 +178,7 @@ class AskBox(QWidget):
             return   # ignore Enter on an empty box
         # Which extra keys are held down right now? We ask macOS directly
         # (queryKeyboardModifiers) instead of trusting what Qt last saw: after
-        # drawing with Control + Shift, Qt may not have noticed the release.
+        # drawing with Option + D, Qt may not have noticed the release.
         held = QGuiApplication.queryKeyboardModifiers()
         was_attached = self.attached
         self.close_box()

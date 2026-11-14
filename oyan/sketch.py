@@ -1,4 +1,4 @@
-"""Your own pen: hold Control + Shift and drag to draw on the screen.
+"""Your own pen: hold Option + D and drag to draw on the screen.
 
 Circle a piece of code, underline a word, draw an arrow at a button. When
 you let go of the keys, the ask box opens next to what you drew. Your marks
@@ -7,7 +7,7 @@ are then part of the screenshot, so the AI sees exactly what you mean.
 How it works
 ------------
 Oyan's normal overlay lets every click pass through to the app underneath,
-so it cannot be drawn on. While Control + Shift are held down, this second
+so it cannot be drawn on. While Option + D are held down, this second
 see-through window is put on top instead, and it DOES catch the mouse. Let
 go of the keys and it disappears again, handing the finished strokes over.
 
@@ -64,7 +64,7 @@ class DrawLayer(QWidget):
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     def begin(self, screen):
-        """Control + Shift went down: cover this monitor and wait for strokes."""
+        """Option + D went down: cover this monitor and wait for strokes."""
         self.strokes = []
         self.current = None
         self.setGeometry(screen.geometry())
@@ -91,7 +91,7 @@ class DrawLayer(QWidget):
             self.finished.emit(real)
 
     # --- The mouse -----------------------------------------------------------
-    # macOS treats Control + click as a right-click, so we accept any button.
+    # We accept any mouse button.
 
     def mousePressEvent(self, event):
         self.current = [event.position()]

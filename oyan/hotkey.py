@@ -1,58 +1,83 @@
-"""The global hotkey: a key combination that works in any app.
+"""Oyan's keys: they work in any app.
+
+    Option + A        Ask   (open the ask box)
+    Option + S        Speak (start listening; press again to stop)
+    Option + D        Draw  (hold both keys and drag the mouse)
+    Esc               wipe the board / stop
+
+A, S and D sit next to each other under the left hand, with Option under
+the thumb.
 
 How it works
 ------------
-macOS lets a program ask to be told about every key press on the Mac, even
-when another app is in front. That is powerful, so macOS only allows it after
-you grant "Accessibility" permission in System Settings. The permission is
-given to the app that started Oyan (Terminal or VS Code), not to Oyan itself.
+We put an "event tap" on the keyboard. An event tap is a checkpoint that
+macOS runs every key press through before any app receives it. Our function
+`_on_key` looks at each key and returns one of two things:
 
-We register two "monitors":
-* a global one, which hears key presses meant for OTHER apps;
-* a local one, which hears key presses meant for Oyan (while its text box
-  is open).
+* the event itself  -> "carry on, this key is not for me";
+* None              -> "this key was mine": no app ever sees it.
+
+That second answer is why Option + A opens Oyan WITHOUT also typing "å" into
+the app you are working in. (An earlier version could only listen to keys,
+not take them, which is why it needed awkward three-key combinations.)
+
+Because every key on the Mac passes through `_on_key`, it must be quick. It
+only decides "mine or not" and asks Qt to run the real work a moment later
+(QTimer.singleShot(0, ...)), so typing never has to wait for Oyan.
+
+macOS allows an event tap only after you grant "Accessibility" permission in
+System Settings to the app that starts Oyan (Terminal or VS Code).
 
 We use PyObjC here, a bridge that lets Python call macOS's own functions.
 """
 
-from AppKit import (
-    NSEvent,
-    NSEventMaskFlagsChanged,
-    NSEventMaskKeyDown,
-    NSEventMaskLeftMouseDown,
-    NSEventModifierFlagCommand,
-    NSEventModifierFlagControl,
-    NSEventModifierFlagOption,
-    NSEventModifierFlagShift,
-)
+from AppKit import NSEvent, NSEventMaskLeftMouseDown
 from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-
-# --- The hotkey: Control + Option + O (O for Oyan) ------------------------
-# It used to be Control + Option + Space, but macOS itself uses that one for
-# "select the next keyboard layout". Oyan only listens to keys and cannot
-# stop macOS from acting on them too, so every press also switched the
-# typing language. Control + Option + O is not used by macOS.
-
-HOTKEY_KEY_CODE = 31  # macOS's number for the O key
-HOTKEY_MODIFIERS = NSEventModifierFlagControl | NSEventModifierFlagOption
-HOTKEY_NAME = "Control + Option + O"
-ESCAPE_KEY_CODE = 53  # macOS's number for the Esc key
-
-# --- The voice hotkey: Control + Option + V (same modifier keys) ----------
-VOICE_KEY_CODE = 9    # macOS's number for the V key
-VOICE_HOTKEY_NAME = "Control + Option + V"
-
-# When comparing, look only at these four modifier keys (ignore Caps Lock etc.).
-ALL_MODIFIERS = (
-    NSEventModifierFlagControl
-    | NSEventModifierFlagOption
-    | NSEventModifierFlagCommand
-    | NSEventModifierFlagShift
+from PyQt6.QtCore import QTimer
+from Quartz import (
+    CFMachPortCreateRunLoopSource,
+    CFRunLoopAddSource,
+    CFRunLoopGetMain,
+    CGEventGetFlags,
+    CGEventGetIntegerValueField,
+    CGEventMaskBit,
+    CGEventTapCreate,
+    CGEventTapEnable,
+    kCFRunLoopCommonModes,
+    kCGEventFlagMaskAlternate,
+    kCGEventFlagMaskCommand,
+    kCGEventFlagMaskControl,
+    kCGEventFlagMaskShift,
+    kCGEventFlagsChanged,
+    kCGEventKeyDown,
+    kCGEventKeyUp,
+    kCGEventTapDisabledByTimeout,
+    kCGEventTapDisabledByUserInput,
+    kCGEventTapOptionDefault,
+    kCGHeadInsertEventTap,
+    kCGKeyboardEventAutorepeat,
+    kCGKeyboardEventKeycode,
+    kCGSessionEventTap,
 )
+
+# macOS's numbers for the keys we use.
+KEY_A = 0
+KEY_S = 1
+KEY_D = 2
+KEY_ESCAPE = 53
+
+HOTKEY_NAME = "Option + A"
+VOICE_HOTKEY_NAME = "Option + S"
+PEN_HOTKEY_NAME = "Option + D"
+
+# macOS calls the Option key "Alternate". When comparing, look only at these
+# four modifier keys (and ignore Caps Lock and the like).
+OPTION = kCGEventFlagMaskAlternate
+ALL_MODIFIERS = kCGEventFlagMaskControl | kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift
 
 
 def has_permission(ask=False):
-    """Is Oyan allowed to hear key presses in other apps?
+    """Is Oyan allowed to see key presses in other apps?
 
     With ask=True, macOS shows its own window that offers to open
     System Settings, if permission has not been granted yet.
@@ -61,105 +86,120 @@ def has_permission(ask=False):
 
 
 class GlobalHotkey:
-    """Calls `on_pressed()` every time the hotkey is pressed, in any app.
+    """Watches the keyboard and calls the right function for each of Oyan's keys.
 
-    Also calls `on_escape()` when Esc is pressed while another app is in
-    front. We only listen: the other app still receives its Esc as usual.
+    on_pressed()   - Option + A
+    on_voice()     - Option + S
+    on_pen(down)   - Option + D went down (True) or was let go (False)
+    on_escape()    - Esc (the other app still receives its Esc as usual)
+    on_click()     - the mouse button went down in another app; used by the
+                     step-by-step mode to notice that you did a step
     """
 
     def __init__(self, on_pressed, on_escape, on_click=None, on_voice=None, on_pen=None):
-        # Called with True when Control + Shift (and nothing else) go down,
-        # and with False when that stops being the case. Used for drawing.
-        self.on_pen = on_pen
-        self._pen_down = False
         self.on_pressed = on_pressed
         self.on_escape = on_escape
-        self.on_voice = on_voice   # called when the voice hotkey is pressed
-        # Called when the mouse button goes down in another app. Used by the
-        # step-by-step mode to notice that you did a step. We learn only THAT
-        # a click happened; the other app still receives it as usual.
         self.on_click = on_click
-        self._monitors = []
+        self.on_voice = on_voice
+        self.on_pen = on_pen
+        self.pen_is_down = False
+        self.tap = None
+        self._click_monitor = None
 
     def start(self):
-        self._monitors = [
-            NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-                NSEventMaskKeyDown, self._on_global_key
-            ),
-            NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
-                NSEventMaskKeyDown, self._on_local_key
-            ),
-        ]
-        if self.on_pen is not None:
-            # "Flags changed" is what macOS calls pressing or releasing a
-            # modifier key such as Shift or Control.
-            self._monitors.append(
-                NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-                    NSEventMaskFlagsChanged, self._on_flags_changed
-                )
-            )
-            # The same for when Oyan itself is the active app (after a click
-            # on the drawing layer, for example): a global monitor does not
-            # hear those, so we need a local one as well.
-            self._monitors.append(
-                NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
-                    NSEventMaskFlagsChanged, self._on_local_flags_changed
-                )
-            )
+        """Install the keyboard checkpoint. Returns False if macOS refused."""
+        events = (
+            CGEventMaskBit(kCGEventKeyDown)
+            | CGEventMaskBit(kCGEventKeyUp)
+            | CGEventMaskBit(kCGEventFlagsChanged)   # a modifier key pressed or released
+        )
+        self.tap = CGEventTapCreate(
+            kCGSessionEventTap,         # all keys of this login session
+            kCGHeadInsertEventTap,      # look at them first, before the apps
+            kCGEventTapOptionDefault,   # "default" = we may also take keys away
+            events,
+            self._on_key,
+            None,
+        )
+        if self.tap is None:
+            return False   # no Accessibility permission
+        source = CFMachPortCreateRunLoopSource(None, self.tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes)
+        CGEventTapEnable(self.tap, True)
+
         if self.on_click is not None:
-            self._monitors.append(
-                NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-                    NSEventMaskLeftMouseDown, lambda event: self.on_click()
-                )
+            # Mouse clicks we only need to hear about, so a plain listener is enough.
+            self._click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskLeftMouseDown, lambda event: self.on_click()
             )
+        return True
 
     def stop(self):
-        for monitor in self._monitors:
-            if monitor is not None:
-                NSEvent.removeMonitor_(monitor)
-        self._monitors = []
+        if self.tap is not None:
+            tap, self.tap = self.tap, None   # forget it first, then switch it off
+            CGEventTapEnable(tap, False)
+        if self._click_monitor is not None:
+            NSEvent.removeMonitor_(self._click_monitor)
+            self._click_monitor = None
 
-    def _is_hotkey(self, event):
-        modifiers = event.modifierFlags() & ALL_MODIFIERS
-        return event.keyCode() == HOTKEY_KEY_CODE and modifiers == HOTKEY_MODIFIERS
+    @staticmethod
+    def _later(function, *arguments):
+        """Run a function as soon as Qt is free, not inside the key checkpoint."""
+        if function is not None:
+            QTimer.singleShot(0, lambda: function(*arguments))
 
-    def _on_flags_changed(self, event):
-        held = event.modifierFlags() & ALL_MODIFIERS
-        pen_down = held == (NSEventModifierFlagControl | NSEventModifierFlagShift)
-        if pen_down != self._pen_down:
-            self._pen_down = pen_down
-            self.on_pen(pen_down)
+    def _set_pen(self, down):
+        if down != self.pen_is_down:
+            self.pen_is_down = down
+            self._later(self.on_pen, down)
 
-    def _on_local_flags_changed(self, event):
-        self._on_flags_changed(event)
-        return event   # hand it back so the app still receives it
+    def _on_key(self, proxy, event_type, event, _):
+        """Called by macOS for every key event. Return None to take the key."""
+        try:
+            # Two special messages tell us the tap was switched off. If macOS
+            # did it because we once answered too slowly, switch it back on.
+            # If we did it ourselves (stop), leave it off.
+            if event_type in (kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput):
+                if event_type == kCGEventTapDisabledByTimeout and self.tap is not None:
+                    CGEventTapEnable(self.tap, True)
+                return event
 
-    def _is_voice_hotkey(self, event):
-        modifiers = event.modifierFlags() & ALL_MODIFIERS
-        return (
-            self.on_voice is not None
-            and event.keyCode() == VOICE_KEY_CODE
-            and modifiers == HOTKEY_MODIFIERS
-        )
+            held = CGEventGetFlags(event) & ALL_MODIFIERS
+            only_option = held == OPTION
 
-    def _on_global_key(self, event):
-        if self._is_hotkey(event) and not event.isARepeat():
-            self.on_pressed()
-        elif self._is_voice_hotkey(event) and not event.isARepeat():
-            self.on_voice()
-        elif event.keyCode() == ESCAPE_KEY_CODE:
-            self.on_escape()
+            if event_type == kCGEventFlagsChanged:
+                # Letting go of Option while drawing ends the drawing too.
+                if self.pen_is_down and not only_option:
+                    self._set_pen(False)
+                return event
 
-    def _on_local_key(self, event):
-        # A local monitor must hand the event back so the app still receives
-        # it. Returning None instead "swallows" the key press, which is what
-        # we want for the hotkey itself (no stray letter typed in the box).
-        if self._is_hotkey(event):
-            if not event.isARepeat():
-                self.on_pressed()
-            return None
-        if self._is_voice_hotkey(event):
-            if not event.isARepeat():
-                self.on_voice()
-            return None
-        return event
+            key = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            repeat = bool(CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat))
+
+            if event_type == kCGEventKeyUp:
+                if key == KEY_D and self.pen_is_down:
+                    self._set_pen(False)
+                    return None
+                if only_option and key in (KEY_A, KEY_S, KEY_D):
+                    return None        # the key-up belonging to a key we took
+                return event
+
+            # From here on: a key went down.
+            if key == KEY_ESCAPE and held == 0:
+                self._later(self.on_escape)
+                return event           # Esc is shared: the app gets it as well
+            if only_option and key == KEY_A:
+                if not repeat:         # holding the key down must not fire again and again
+                    self._later(self.on_pressed)
+                return None
+            if only_option and key == KEY_S:
+                if not repeat:
+                    self._later(self.on_voice)
+                return None
+            if only_option and key == KEY_D:
+                self._set_pen(True)
+                return None
+            return event
+        except Exception:
+            # Whatever goes wrong here, never block the keyboard.
+            return event

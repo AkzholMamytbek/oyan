@@ -222,7 +222,7 @@ class OverlayController:
         self.writing = None       # the note being written right now, if any
         self.to_draw = []         # marks still waiting to be drawn
         self.drawing = None       # the mark being drawn right now, if any
-        self.user_strokes = []    # what YOU drew with Control + Shift (see sketch.py)
+        self.user_strokes = []    # what YOU drew with Option + D (see sketch.py)
         self.on_note_finished = None   # a function to call when writing ends
         self.on_note_removed = None    # a function to call when an answer leaves the board
         self.rub_cursor = QPointF(QCursor.pos())   # where the cursor was on the last tick

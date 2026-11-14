@@ -10,7 +10,7 @@ Each part lives in its own file and knows nothing about the others:
 * blocked.py  - apps Oyan refuses to photograph
 * history.py  - past questions and answers, searchable
 * speak.py    - reading answers aloud with the Mac's own voice
-* sketch.py   - your own pen: Control + Shift and drag to draw on the screen
+* sketch.py   - your own pen: Option + D and drag to draw on the screen
 * listen.py   - turning your spoken question into text, on this Mac
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
@@ -91,18 +91,20 @@ class Oyan:
 
     def start(self):
         self.overlay.start()
-        self.hotkey.start()
+        keys_work = self.hotkey.start()
 
         # Starting a program makes macOS put it in front. Oyan should stay in
         # the background, so hand the keyboard back a moment later (once
         # macOS has finished bringing Oyan forward).
         QTimer.singleShot(300, lambda: bring_to_front(app_in_front()))
 
-        if hotkey.has_permission(ask=True):
+        if keys_work and hotkey.has_permission(ask=True):
             print(f"Oyan is running. Press {hotkey.HOTKEY_NAME} to ask a question.")
+            print(f"To draw on the screen, hold {hotkey.PEN_HOTKEY_NAME} and drag the mouse.")
         else:
+            hotkey.has_permission(ask=True)   # lets macOS offer to open System Settings
             print(
-                "Oyan needs Accessibility permission for the hotkey to work.\n"
+                "Oyan needs Accessibility permission for its keys to work.\n"
                 "  1. Open System Settings > Privacy & Security > Accessibility.\n"
                 "  2. Switch on the app you started Oyan from (Terminal or Visual Studio Code).\n"
                 "  3. Quit Oyan with Ctrl+C and start it again."
@@ -132,7 +134,7 @@ class Oyan:
             self.ask_box.show_attached(self._place_under(note))
 
     # --- Your own pen ----------------------------------------------------------
-    # Hold Control + Shift and drag to draw. Let go, and the ask box opens
+    # Hold Option + D and drag to draw. Let go, and the ask box opens
     # next to your drawing. The strokes stay on screen for that one question,
     # so they are in the screenshot and the AI sees what you marked.
 
