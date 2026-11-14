@@ -34,6 +34,7 @@ from oyan.speak import Speaker
 
 
 NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
+CAPTURE_DELAY_MS = 150   # wait for the ask box to vanish before taking the picture
 STEP_CLICK_RADIUS = 90   # a click this close to a step's spot counts as doing the step
 STEP_CIRCLE = 16         # half the size of the circle drawn around a step's spot
 
@@ -75,8 +76,7 @@ class Oyan:
 
         self.question = None     # the question being worked on right now
         self.screenshot = None   # the latest screenshot (its size and place on screen)
-        self.image_bytes = None  # that picture's content, kept in memory only
-        self.exchanges = []      # (question, answer) pairs about that picture
+        self.exchanges = []      # (question, answer) pairs since the board was last wiped
 
     def start(self):
         self.overlay.start()
@@ -116,6 +116,7 @@ class Oyan:
         It does not take the keyboard until you click in it."""
         if self.steps and self.step_index < len(self.steps) - 1:
             return   # in the middle of a step-by-step answer: no box yet
+        self.ai.prepare()   # you may well ask more: be ready
         if not self.ask_box.is_typing():   # do not disturb if you are typing
             self.ask_box.show_attached(self._place_under(note))
 
@@ -129,6 +130,7 @@ class Oyan:
 
     def _open_box(self):
         """Open the ask box for typing: under the newest answer, or at the cursor."""
+        self.ai.prepare()   # get the AI program ready while you type
         note = self.overlay.note
         if note is not None and note.visible:
             # An answer is on screen: type right under it.
@@ -198,8 +200,7 @@ class Oyan:
         self.steps = []
         self.speaker.stop()
         self.overlay.wipe_board()
-        # A clean board is a clean start: forget the picture and the conversation.
-        self.image_bytes = None
+        # A clean board is a clean start: forget the conversation.
         self.exchanges = []
 
     def _note_how_it_was_asked(self):
@@ -236,16 +237,14 @@ class Oyan:
     def on_question(self, question, attached=False):
         """Enter: send the whole screen the cursor is on.
 
-        Exception: Enter in the box under an answer is a FOLLOW-UP. It takes
-        no new picture; it asks again about the one already sent, together
-        with the earlier questions and answers.
+        Every question takes a NEW picture, so Oyan always sees what is on
+        your screen now. The earlier questions and answers (since you last
+        wiped the board) are sent along as text, so "and the other one?"
+        still makes sense.
         """
         self.steps = []   # a new question ends any step-by-step answer
         self.speaker.stop()
         self._note_how_it_was_asked()
-        if attached and self.image_bytes is not None and self.exchanges:
-            self.ask_follow_up(question)
-            return
         if not self._ready_to_capture():
             return
         self.ai.cancel()   # forget an earlier question that is still waiting
@@ -257,13 +256,7 @@ class Oyan:
         # picture, and wait a moment so the ask box has really gone and your
         # app is back in front.
         self.overlay.set_board_visible(False)
-        QTimer.singleShot(250, self.take_screenshot)
-
-    def ask_follow_up(self, question):
-        self.ai.cancel()
-        self.question = question
-        self.overlay.thinking = True
-        self.ai.ask(question, self.screenshot, self.image_bytes, earlier=self.exchanges)
+        QTimer.singleShot(CAPTURE_DELAY_MS, self.take_screenshot)
 
     def on_question_for_area(self, question):
         """Shift+Enter: let the owner drag a box first; only that part is sent."""
@@ -283,7 +276,7 @@ class Oyan:
         self.area = rect
         bring_to_front(app_in_front())   # give the keyboard back to your app
         # Wait for the dimming to disappear before taking the picture.
-        QTimer.singleShot(250, self.take_screenshot)
+        QTimer.singleShot(CAPTURE_DELAY_MS, self.take_screenshot)
 
     def on_area_cancelled(self):
         """Esc while choosing an area: nothing is captured, nothing is sent."""
@@ -306,15 +299,14 @@ class Oyan:
         # Send the question and the screenshot to the AI model. The buddy
         # pulses while we wait for the reply.
         try:
-            # Keep the picture in memory (for follow-up questions) and remove
-            # the working file; the "what left my Mac" log keeps its own copy.
-            self.image_bytes = self.screenshot.path.read_bytes()
+            # Read the picture into memory and remove the working file; the
+            # "what left my Mac" log keeps its own copy.
+            image_bytes = self.screenshot.path.read_bytes()
         finally:
             capture.delete_screenshot()
-        self.exchanges = []   # a new picture starts a new conversation
 
         self.overlay.thinking = True
-        self.ai.ask(self.question, self.screenshot, self.image_bytes)
+        self.ai.ask(self.question, self.screenshot, image_bytes, earlier=self.exchanges)
 
     def on_answer(self, answer):
         """The AI replied. `answer` has the text and the point (see ai.py)."""

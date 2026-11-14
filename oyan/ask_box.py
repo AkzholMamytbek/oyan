@@ -26,7 +26,7 @@ BOX_HEIGHT = 44
 OFFSET_FROM_CURSOR = QPoint(18, 34)   # below the cursor and the buddy dot
 
 PLACEHOLDER_NEW = "Ask about your screen…   (Shift+Enter: pick an area)"
-PLACEHOLDER_FOLLOW_UP = "Follow up on this…   (Option+Enter: look again)"
+PLACEHOLDER_FOLLOW_UP = "Ask more…   (Shift+Enter: pick an area)"
 
 PAPER = QColor(255, 250, 235)         # warm paper colour
 INK = QColor(60, 40, 20)              # dark brown, like pencil
@@ -129,6 +129,7 @@ class AskBox(QWidget):
         You keep working in your app. The box waits; click in it to type.
         """
         self.attached = True
+        self._previous_app = None   # decided afresh when you start typing
         self.input.clear()
         self.input.setPlaceholderText(PLACEHOLDER_FOLLOW_UP)
         self.move(self._keep_on_screen(top_left))
@@ -150,11 +151,15 @@ class AskBox(QWidget):
 
     def close_box(self):
         """Hide the box and give the keyboard back to the previous app."""
-        was_typing = self.is_typing()
+        # If Oyan is the active app (you were typing here), hand the keyboard
+        # back to the app you came from. If you have already clicked into
+        # another app yourself, leave you where you are.
+        oyan_is_active = bool(NSApp.isActive())
+        go_back_to = self._previous_app or app_in_front()
         self.attached = False
         self.hide()
-        if was_typing:
-            bring_to_front(self._previous_app)
+        if oyan_is_active:
+            bring_to_front(go_back_to)
         self._previous_app = None
 
     def _keep_on_screen(self, pos):
@@ -191,10 +196,9 @@ class AskBox(QWidget):
 
     def _clicked(self):
         """You clicked in the box while it was only waiting: start typing."""
-        # Remember where you came from, so the keyboard can go back there.
-        if self._previous_app is None:
-            self._previous_app = app_in_front()
         if not self.is_typing():
+            # Remember where you came from, so the keyboard can go back there.
+            self._previous_app = app_in_front()
             # Wait until macOS has finished handling the click itself, then
             # take the keyboard; doing it in the middle of the click fails.
             QTimer.singleShot(50, self._take_keyboard)
@@ -215,7 +219,6 @@ class AskBox(QWidget):
         # itself. A box attached under an answer stays where it is.
         if event.type() == QEvent.Type.ActivationChange and self.isVisible():
             if not self.isActiveWindow():
-                self._previous_app = None   # you chose where to go; do not jump back
                 if not self.attached:
                     self.hide()
                     self.cancelled.emit()

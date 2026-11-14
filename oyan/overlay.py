@@ -20,9 +20,10 @@ What the buddy is doing (its "mode")
 
 The board
 ---------
-Answers stay on screen like writing on a school board (`self.notes`) until
-they are wiped. While a screenshot is taken they are hidden for a moment, so
-old answers are never in the picture that is sent.
+The answer stays on screen like writing on a school board until you wipe it
+with Esc or ask something new (a new answer replaces the old one). While a
+screenshot is taken it is hidden for a moment, so an old answer is never in
+the picture that is sent.
 
 Coordinates
 -----------
@@ -61,14 +62,14 @@ BOB_HEIGHT = 2.0            # how far it floats up and down, in points
 BOB_SPEED = 3.0             # how fast it floats
 TICK_MS = 16                # 16 ms per tick is about 60 frames per second
 
-GLIDE_SPEED = 900           # points per second when flying to a spot
-GLIDE_MIN_SECONDS = 0.45    # ...but never quicker than this
-GLIDE_MAX_SECONDS = 1.2     # ...or slower than this
+GLIDE_SPEED = 2200          # points per second when flying to a spot
+GLIDE_MIN_SECONDS = 0.22    # ...but never quicker than this
+GLIDE_MAX_SECONDS = 0.55    # ...or slower than this
 GLIDE_CURVE = 0.25          # how much the path bends (0 = straight line)
-POINT_PAUSE_SECONDS = 0.35  # how long it rests on the spot before writing
-WRITE_SPEED = 38            # letters per second
+POINT_PAUSE_SECONDS = 0.10  # how long it rests on the spot before writing
+WRITE_SPEED = 170           # letters per second
 WIPE_SECONDS = 0.55         # how long the eraser takes to wipe one answer
-DRAW_SPEED = 520            # points of marker line drawn per second
+DRAW_SPEED = 1300           # points of marker line drawn per second
 
 IDLE_SECONDS = 30           # mouse still for this long -> draw a doodle
 DOODLE_PAUSE_SECONDS = 45   # wait at least this long between doodles
@@ -272,7 +273,10 @@ class OverlayController:
     # --- Showing and removing an answer -------------------------------------
 
     def show_answer(self, text, spot, marks=(), hint=None):
-        """Draw the `marks`, then fly to `spot` and write `text` beside it.
+        """Fly to `spot`, write `text` beside it, then draw the `marks`.
+
+        The words come first because they are what you are waiting for; the
+        circles and arrows follow while you are already reading.
 
         `spot` is a global screen position (QPointF), or None if the AI did
         not point at anything; then the note is written near the buddy.
@@ -281,15 +285,13 @@ class OverlayController:
         Returns the new note.
         """
         self.remove_doodle()
-        # An unfinished wipe or older reminders should not linger.
+        # One answer at a time: the previous answer and its drawings make way
+        # for the new one, so answers can never pile up on top of each other.
         for old in self.notes:
-            old.wipe = 0.0
-            old.show_hint = False
             self._repaint(old.bounds())
             for mark in old.marks:
-                mark.progress = 1.0   # finish any half-drawn mark at once
-                mark.fade = 1.0
                 self._repaint(mark.bounds())
+        self.notes = []
 
         anchor = spot if spot is not None else self.buddy_pos
         screen = QGuiApplication.screenAt(anchor.toPoint()) or QGuiApplication.primaryScreen()
@@ -313,7 +315,10 @@ class OverlayController:
 
         self.to_draw = list(marks)
         self.drawing = None
-        self._draw_next()
+        if spot is not None:
+            self._start_glide(spot, then=self._arrived_at_spot)
+        else:
+            self._arrived_at_spot()
         return new_note
 
     def remove_note(self, note):
@@ -325,14 +330,13 @@ class OverlayController:
             self.notes.remove(note)
 
     def _draw_next(self):
-        """Draw the next waiting mark; when none are left, go and write."""
+        """Draw the next waiting mark; when none are left, go back to the cursor."""
         if self.to_draw:
             self.drawing = self.to_draw.pop(0)
             self._start_glide(self.drawing.start_position(), then=self._start_drawing)
-        elif self.spot is not None:
-            self._start_glide(self.spot, then=self._arrived_at_spot)
         else:
-            self._arrived_at_spot()
+            self.drawing = None
+            self.mode = "follow"
 
     def _start_drawing(self):
         self.mode = "draw"
@@ -523,10 +527,10 @@ class OverlayController:
             self.buddy_pos = note.pen_position()
             self._repaint(note.bounds())
             if note.finished():
-                self.mode = "follow"   # done: the note stays, the buddy goes home
                 self.writing = None
                 if self.on_note_finished is not None:
                     self.on_note_finished(note)
+                self._draw_next()   # now the circles and arrows, then home
 
         elif self.mode == "doodle":
             doodle = self.doodle

@@ -38,7 +38,7 @@ def ask_with_key(api_key, system_prompt, image_data, text, timeout_seconds):
                 "content": [
                     {
                         "type": "image",
-                        "source": {"type": "base64", "media_type": "image/png", "data": image_data},
+                        "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
                     },
                     {"type": "text", "text": text},
                 ],

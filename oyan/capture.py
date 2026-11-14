@@ -32,7 +32,14 @@ from Quartz import CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess
 
 # Oyan keeps its private files in a folder called ".oyan" in your home folder.
 DATA_FOLDER = Path.home() / ".oyan"
-SCREENSHOT_PATH = DATA_FOLDER / "last_screenshot.png"   # deleted as soon as it is sent
+RAW_PATH = DATA_FOLDER / "capture.png"                  # straight from macOS, full size
+SCREENSHOT_PATH = DATA_FOLDER / "last_screenshot.jpg"   # shrunk; deleted as soon as it is sent
+
+# JPEG is a way of storing pictures that makes much smaller files than PNG
+# (about a fifth of the size here) by dropping detail the eye barely sees.
+# A smaller file uploads faster, which matters on a slow connection.
+# 100 would be best quality and biggest; 85 keeps small text sharp.
+JPEG_QUALITY = 85
 
 MAX_IMAGE_SIDE = 1280
 
@@ -68,6 +75,7 @@ def request_permission():
 def delete_screenshot():
     """Remove the picture from disk; it has been handed to the AI call."""
     SCREENSHOT_PATH.unlink(missing_ok=True)
+    RAW_PATH.unlink(missing_ok=True)
 
 
 def capture_screen(screen):
@@ -87,14 +95,15 @@ def capture_rect(rect):
             "/usr/sbin/screencapture",
             "-x",
             f"-R{rect.x()},{rect.y()},{rect.width()},{rect.height()}",
-            str(SCREENSHOT_PATH),
+            str(RAW_PATH),
         ],
         check=True,     # raise an error if screencapture fails
         timeout=10,
     )
 
     # Shrink the picture if it is bigger than we need.
-    image = QImage(str(SCREENSHOT_PATH))
+    image = QImage(str(RAW_PATH))
+    RAW_PATH.unlink(missing_ok=True)   # the full-size copy is not needed any more
     if image.isNull():
         raise RuntimeError("The screenshot could not be read.")
     if max(image.width(), image.height()) > MAX_IMAGE_SIDE:
@@ -104,7 +113,7 @@ def capture_rect(rect):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        image.save(str(SCREENSHOT_PATH))
+    image.save(str(SCREENSHOT_PATH), "JPEG", JPEG_QUALITY)
 
     return Screenshot(
         path=SCREENSHOT_PATH,

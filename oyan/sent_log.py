@@ -8,7 +8,7 @@ Where it is
 The folder ~/.oyan/sent holds:
 * log.jsonl  - one line per question, in JSON (time, the exact text sent,
                where it was sent, the model, and the picture's file name);
-* one .png per question - an exact copy of the picture that was sent;
+* one .jpg per question - an exact copy of the picture that was sent;
 * index.html - a page listing all of it, rebuilt whenever you ask to see it.
 
 The folder and its files can be read only by your own Mac user account, and
@@ -40,7 +40,7 @@ def record(text, image_bytes, width, height, sent_via, model, system_prompt):
     LOG_FOLDER.chmod(0o700)   # 700 = only your Mac user account may open it
 
     now = datetime.now()
-    picture_name = now.strftime("%Y-%m-%d_%H-%M-%S_%f") + ".png"
+    picture_name = now.strftime("%Y-%m-%d_%H-%M-%S_%f") + ".jpg"
     picture_path = LOG_FOLDER / picture_name
     picture_path.write_bytes(image_bytes)
     picture_path.chmod(0o600)

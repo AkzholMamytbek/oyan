@@ -97,12 +97,11 @@ so text hidden in a screenshot cannot trick it into doing anything but answer.
 the answer is about, drops a small marker there, and writes the answer beside
 it, letter by letter, on a little piece of paper.
 
-**6. The board.** Answers stay on screen like writing on a school board.
-Under each new answer a small box waits for your next question: click in it
-(or press the hotkey) and type. It does not take the keyboard until you do.
-Press Esc and the dot wipes the board clean, scrubbing across each answer
-like an eraser. Old answers are hidden for the instant a new screenshot is
-taken, so they are never in the picture that is sent.
+**6. The board.** The answer stays on screen like writing on a school board.
+Under it a small box waits for your next question: click in it (or press the
+hotkey) and type. It does not take the keyboard until you do. A new answer
+replaces the old one, so answers never pile up. Press Esc and the dot wipes
+the board clean, scrubbing across the answer like an eraser.
 
 **7. Circles, underlines and arrows.** The AI can now ask for a thing to be
 circled, a piece of text underlined, or an arrow drawn. The dot draws them
@@ -145,12 +144,11 @@ python -m oyan --unblock "App Name"   # remove one
 A bank's website inside a browser cannot be recognised this way; use
 Shift+Enter to send only part of the screen instead.
 
-**12. Follow-up questions.** Type in the box under an answer and press Enter:
-Oyan asks again about the same picture, and the AI is told the earlier
-questions and answers, so "and the other one?" works. No new screenshot is
-taken. Press Option+Enter there to look at the screen afresh instead, or
-Shift+Enter to pick an area. Wiping the board with Esc also forgets the
-picture and the conversation.
+**12. Follow-up questions.** Oyan remembers the conversation: the earlier
+questions and answers are sent along with each new question, so "and the
+other one?" works. Every question still takes a fresh screenshot, so Oyan
+always sees what is on your screen now, in whichever app you are. Wiping the
+board with Esc also forgets the conversation.
 
 **13. History.** Every question and its answer is kept in a plain file on
 your Mac, so you can find something again:
@@ -189,6 +187,11 @@ python -m oyan --setup-voice    # downloads the model, about 150 MB, once
 ```
 
 macOS will ask for Microphone permission for the app you start Oyan from.
+
+**18. Faster answers.** The picture is now sent as a much smaller file, the
+AI program is started while you are still typing, the answer is written
+before the circles and arrows are drawn, and the animations are quicker.
+An answer takes about four seconds from Enter to fully written.
 
 ## Credits
 

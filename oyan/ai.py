@@ -57,6 +57,7 @@ from oyan.capture import DATA_FOLDER
 
 AI_MODEL = "sonnet"       # for the `claude` command; "haiku" is faster, "opus" is smarter
 TIMEOUT_SECONDS = 90      # give up if there is no reply after this long
+WARM_SECONDS = 120        # how long a program started in advance may wait for a question
 
 SYSTEM_PROMPT = (
     "You are Oyan, a small friendly helper that lives next to the cursor on a Mac. "
@@ -199,6 +200,11 @@ class AskAI(QObject):
         self.timeout.setSingleShot(True)
         self.timeout.timeout.connect(self._on_timeout)
 
+        self.warm = None   # a program started in advance, waiting for a question
+        self.warm_limit = QTimer()
+        self.warm_limit.setSingleShot(True)
+        self.warm_limit.timeout.connect(self._close_warm)
+
     def is_busy(self):
         return self.process is not None or self.direct_waiting
 
@@ -206,18 +212,21 @@ class AskAI(QObject):
         """Send the question and the picture.
 
         `image_bytes` is the picture file's content. `earlier` is a list of
-        (question, answer) pairs already exchanged about this same picture;
-        they are sent along so the AI remembers the conversation.
+        (question, answer) pairs from before in this conversation; they are
+        sent along so the AI remembers what was said.
         """
         # base64 writes the picture's bytes as plain letters and digits, which
         # is how pictures travel inside a text message to the AI.
         image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
         text = f"The screenshot is {screenshot.width} x {screenshot.height} pixels.\n"
         if earlier:
-            text += "Earlier questions and answers about this same screenshot:\n"
+            text += (
+                "Earlier in this conversation (those questions were about earlier "
+                "screenshots; the screen may look different now):\n"
+            )
             for old_question, old_answer in earlier[-MAX_REMEMBERED:]:
                 text += f"Q: {old_question}\nA: {old_answer}\n"
-            text += "Now answer this follow-up question.\n"
+            text += "Now answer the new question about the screenshot attached to this message.\n"
         text += f"Question: {question}"
 
         # Decide which way the request will go.
@@ -287,12 +296,28 @@ class AskAI(QObject):
                 "content": [
                     {
                         "type": "image",
-                        "source": {"type": "base64", "media_type": "image/png", "data": image_data},
+                        "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
                     },
                     {"type": "text", "text": text},
                 ],
             },
         }
+        # Use the program that was started in advance if it is still waiting
+        # (see prepare); otherwise start one now.
+        if self.warm is not None and self.warm.state() == QProcess.ProcessState.Running:
+            self.process, self.warm = self.warm, None
+        else:
+            self.process = self._start_program(command)
+        self.warm_limit.stop()
+        self.process.finished.connect(self._on_finished)
+        self.process.errorOccurred.connect(self._on_error)
+        # Hand over the message, then close the channel to say "that is all".
+        self.process.write((json.dumps(message) + "\n").encode("utf-8"))
+        self.process.closeWriteChannel()
+        self.timeout.start(TIMEOUT_SECONDS * 1000)
+
+    def _start_program(self, command):
+        """Start the `claude` program. It then waits for a message on its input."""
         arguments = [
             "-p",                               # answer once and exit
             "--input-format", "stream-json",    # we send the message as JSON...
@@ -306,16 +331,34 @@ class AskAI(QObject):
             "--disable-slash-commands",         # do not load skills or commands
             "--no-session-persistence",         # do not save the conversation
         ]
+        process = QProcess()
+        process.setWorkingDirectory(str(DATA_FOLDER))
+        process.start(command, arguments)
+        return process
 
-        self.process = QProcess()
-        self.process.setWorkingDirectory(str(DATA_FOLDER))
-        self.process.finished.connect(self._on_finished)
-        self.process.errorOccurred.connect(self._on_error)
-        self.process.start(command, arguments)
-        # Hand over the message, then close the channel to say "that is all".
-        self.process.write((json.dumps(message) + "\n").encode("utf-8"))
-        self.process.closeWriteChannel()
-        self.timeout.start(TIMEOUT_SECONDS * 1000)
+    def prepare(self):
+        """Start the program ahead of time, while you are still typing.
+
+        Starting it takes most of a second. If it is already running and
+        waiting when you press Enter, the answer comes that much sooner.
+        Nothing is sent to it (or to anyone) until you ask. If you do not
+        ask within WARM_SECONDS, it is closed again.
+        """
+        if settings.get_api_key():
+            return   # the API-key way has no program to start
+        if self.warm is not None and self.warm.state() != QProcess.ProcessState.NotRunning:
+            self.warm_limit.start(WARM_SECONDS * 1000)   # already waiting: keep it a bit longer
+            return
+        command = find_command()
+        if command is not None:
+            self.warm = self._start_program(command)
+            self.warm_limit.start(WARM_SECONDS * 1000)
+
+    def _close_warm(self):
+        if self.warm is not None:
+            self.warm.kill()
+            self.warm.waitForFinished(500)   # give it a moment to really stop
+            self.warm = None
 
     def cancel(self):
         """Stop waiting for the current reply (used by Esc)."""
