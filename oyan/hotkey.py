@@ -17,6 +17,7 @@ We use PyObjC here, a bridge that lets Python call macOS's own functions.
 
 from AppKit import (
     NSEvent,
+    NSEventMaskFlagsChanged,
     NSEventMaskKeyDown,
     NSEventMaskLeftMouseDown,
     NSEventModifierFlagCommand,
@@ -66,7 +67,11 @@ class GlobalHotkey:
     front. We only listen: the other app still receives its Esc as usual.
     """
 
-    def __init__(self, on_pressed, on_escape, on_click=None, on_voice=None):
+    def __init__(self, on_pressed, on_escape, on_click=None, on_voice=None, on_pen=None):
+        # Called with True when Control + Shift (and nothing else) go down,
+        # and with False when that stops being the case. Used for drawing.
+        self.on_pen = on_pen
+        self._pen_down = False
         self.on_pressed = on_pressed
         self.on_escape = on_escape
         self.on_voice = on_voice   # called when the voice hotkey is pressed
@@ -85,6 +90,22 @@ class GlobalHotkey:
                 NSEventMaskKeyDown, self._on_local_key
             ),
         ]
+        if self.on_pen is not None:
+            # "Flags changed" is what macOS calls pressing or releasing a
+            # modifier key such as Shift or Control.
+            self._monitors.append(
+                NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                    NSEventMaskFlagsChanged, self._on_flags_changed
+                )
+            )
+            # The same for when Oyan itself is the active app (after a click
+            # on the drawing layer, for example): a global monitor does not
+            # hear those, so we need a local one as well.
+            self._monitors.append(
+                NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+                    NSEventMaskFlagsChanged, self._on_local_flags_changed
+                )
+            )
         if self.on_click is not None:
             self._monitors.append(
                 NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
@@ -101,6 +122,17 @@ class GlobalHotkey:
     def _is_hotkey(self, event):
         modifiers = event.modifierFlags() & ALL_MODIFIERS
         return event.keyCode() == HOTKEY_KEY_CODE and modifiers == HOTKEY_MODIFIERS
+
+    def _on_flags_changed(self, event):
+        held = event.modifierFlags() & ALL_MODIFIERS
+        pen_down = held == (NSEventModifierFlagControl | NSEventModifierFlagShift)
+        if pen_down != self._pen_down:
+            self._pen_down = pen_down
+            self.on_pen(pen_down)
+
+    def _on_local_flags_changed(self, event):
+        self._on_flags_changed(event)
+        return event   # hand it back so the app still receives it
 
     def _is_voice_hotkey(self, event):
         modifiers = event.modifierFlags() & ALL_MODIFIERS

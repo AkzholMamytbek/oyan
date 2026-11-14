@@ -167,6 +167,12 @@ class ScreenOverlay(QWidget):
         # this window.
         painter.translate(-QPointF(self.geometry().topLeft()))
 
+        # Your own pen strokes. These stay visible even while a screenshot is
+        # taken: they are meant to be in the picture.
+        if controller.user_strokes:
+            from oyan.sketch import paint_strokes   # imported here: sketch.py itself imports this file
+            paint_strokes(painter, controller.user_strokes)
+
         if controller.notes_visible and controller.doodle is not None:
             controller.doodle.paint(painter)
 
@@ -216,6 +222,7 @@ class OverlayController:
         self.writing = None       # the note being written right now, if any
         self.to_draw = []         # marks still waiting to be drawn
         self.drawing = None       # the mark being drawn right now, if any
+        self.user_strokes = []    # what YOU drew with Control + Shift (see sketch.py)
         self.on_note_finished = None   # a function to call when writing ends
         self.on_note_removed = None    # a function to call when an answer leaves the board
         self.rub_cursor = QPointF(QCursor.pos())   # where the cursor was on the last tick
@@ -350,6 +357,12 @@ class OverlayController:
         else:
             self._arrived_at_spot()
         return new_note
+
+    def set_user_strokes(self, strokes):
+        """Show (or, with an empty list, remove) the owner's own pen strokes."""
+        self.user_strokes = strokes
+        for overlay in self.overlays:
+            overlay.update()
 
     def remove_note(self, note):
         """Take one answer (and its marks) off the board at once."""

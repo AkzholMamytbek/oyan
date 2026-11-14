@@ -198,6 +198,12 @@ An answer takes about four seconds from Enter to fully written.
 arrow, in burgundy or royal green. Type `/green` or `/burgundy` in the ask
 box to switch; the choice is remembered.
 
+**20. Your own pen.** Hold **Control + Shift** and drag to draw on the
+screen: circle a piece of code, underline a word, point an arrow. Let go of
+the keys and the ask box opens next to your drawing. Your blue marks are in
+the screenshot, so the AI sees exactly what you mean. They stay for that one
+question; Esc removes them.
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT

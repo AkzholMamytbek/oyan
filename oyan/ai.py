@@ -208,12 +208,13 @@ class AskAI(QObject):
     def is_busy(self):
         return self.process is not None or self.direct_waiting
 
-    def ask(self, question, screenshot, image_bytes, earlier=()):
+    def ask(self, question, screenshot, image_bytes, earlier=(), user_drew=False):
         """Send the question and the picture.
 
         `image_bytes` is the picture file's content. `earlier` is a list of
         (question, answer) pairs from before in this conversation; they are
-        sent along so the AI remembers what was said.
+        sent along so the AI remembers what was said. `user_drew` says that
+        the owner's own blue pen marks are in the picture.
         """
         # base64 writes the picture's bytes as plain letters and digits, which
         # is how pictures travel inside a text message to the AI.
@@ -227,6 +228,11 @@ class AskAI(QObject):
             for old_question, old_answer in earlier[-MAX_REMEMBERED:]:
                 text += f"Q: {old_question}\nA: {old_answer}\n"
             text += "Now answer the new question about the screenshot attached to this message.\n"
+        if user_drew:
+            text += (
+                "The user drew the bright blue pen marks in the screenshot by hand, "
+                "to show what the question is about. Answer about what they marked.\n"
+            )
         text += f"Question: {question}"
 
         # Decide which way the request will go.

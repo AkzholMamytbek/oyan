@@ -10,6 +10,7 @@ Each part lives in its own file and knows nothing about the others:
 * blocked.py  - apps Oyan refuses to photograph
 * history.py  - past questions and answers, searchable
 * speak.py    - reading answers aloud with the Mac's own voice
+* sketch.py   - your own pen: Control + Shift and drag to draw on the screen
 * listen.py   - turning your spoken question into text, on this Mac
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
@@ -30,6 +31,7 @@ from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
 from oyan.overlay import BUDDY_COLORS, OverlayController
 from oyan.region import RegionSelector
+from oyan.sketch import DrawLayer
 from oyan.speak import Speaker
 
 
@@ -62,7 +64,12 @@ class Oyan:
         self.area = None         # the rectangle chosen with Shift+Enter, if any
         self.ask_box.escaped.connect(self.on_escape)
 
-        self.hotkey = hotkey.GlobalHotkey(self.on_hotkey, self.on_escape, self.on_click, self.on_voice_hotkey)
+        self.hotkey = hotkey.GlobalHotkey(
+            self.on_hotkey, self.on_escape, self.on_click, self.on_voice_hotkey, self.on_pen,
+        )
+        self.draw_layer = DrawLayer()
+        self.draw_layer.finished.connect(self.on_drawn)
+        self.strokes_sent = False   # have the owner's pen strokes been in a screenshot yet?
         self.listener = None             # the microphone part, created on first use
         self.next_question_by_voice = False
 
@@ -123,6 +130,33 @@ class Oyan:
         self.ai.prepare()   # you may well ask more: be ready
         if not self.ask_box.is_typing():   # do not disturb if you are typing
             self.ask_box.show_attached(self._place_under(note))
+
+    # --- Your own pen ----------------------------------------------------------
+    # Hold Control + Shift and drag to draw. Let go, and the ask box opens
+    # next to your drawing. The strokes stay on screen for that one question,
+    # so they are in the screenshot and the AI sees what you marked.
+
+    def on_pen(self, down):
+        if down:
+            if self.ask_box.is_typing():
+                return
+            if self.strokes_sent:
+                self.overlay.set_user_strokes([])   # the old drawing has done its job
+                self.strokes_sent = False
+            screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+            self.draw_layer.begin(screen)
+        else:
+            self.draw_layer.end()
+
+    def on_drawn(self, strokes):
+        self.overlay.set_user_strokes(self.overlay.user_strokes + strokes)
+        # Open the ask box just below the lowest point of the drawing.
+        points = [point for stroke in strokes for point in stroke]
+        lowest = max(points, key=lambda point: point.y())
+        self.next_question_by_voice = False
+        self.ai.prepare()
+        self.ask_box.attached = False
+        self.ask_box.open_at(QPoint(round(lowest.x()) - 40, round(lowest.y()) + 24))
 
     def on_note_removed(self, note):
         """An answer left the board (rubbed out, or pushed off by a newer one).
@@ -214,6 +248,8 @@ class Oyan:
             self.ask_box.close_box()
         self.steps = []
         self.speaker.stop()
+        self.overlay.set_user_strokes([])
+        self.strokes_sent = False
         self.overlay.wipe_board()
         # A clean board is a clean start: forget the conversation.
         self.exchanges = []
@@ -276,6 +312,10 @@ class Oyan:
         """
         if self.run_command(question):
             return   # it was a command such as /green, not a question
+        if self.strokes_sent:
+            # These strokes belonged to the previous question.
+            self.overlay.set_user_strokes([])
+            self.strokes_sent = False
         self.steps = []   # a new question ends any step-by-step answer
         self.speaker.stop()
         self._note_how_it_was_asked()
@@ -341,8 +381,10 @@ class Oyan:
         finally:
             capture.delete_screenshot()
 
+        drew = bool(self.overlay.user_strokes)
+        self.strokes_sent = drew
         self.overlay.thinking = True
-        self.ai.ask(self.question, self.screenshot, image_bytes, earlier=self.exchanges)
+        self.ai.ask(self.question, self.screenshot, image_bytes, earlier=self.exchanges, user_drew=drew)
 
     def on_answer(self, answer):
         """The AI replied. `answer` has the text and the point (see ai.py)."""
