@@ -3,6 +3,9 @@
 Extra commands:
     python -m oyan --log          show everything Oyan has sent to the AI
     python -m oyan --clear-log    delete that record
+    python -m oyan --blocked      list the apps Oyan refuses to photograph
+    python -m oyan --block NAME   add an app to that list
+    python -m oyan --unblock NAME remove an app from it
     python -m oyan --set-key      save an optional API key (it is not shown)
     python -m oyan --remove-key   delete the saved key
 """
@@ -14,7 +17,7 @@ import sys
 from AppKit import NSApp, NSApplicationActivationPolicyAccessory
 from PyQt6.QtWidgets import QApplication
 
-from oyan import sent_log, settings
+from oyan import blocked, sent_log, settings
 from oyan.app import Oyan
 
 
@@ -36,6 +39,20 @@ def main():
     option = sys.argv[1] if len(sys.argv) > 1 else ""
     if option in ("--set-key", "--remove-key"):
         manage_key(option)
+        return
+    if option in ("--blocked", "--block", "--unblock"):
+        name = " ".join(sys.argv[2:]).strip()
+        if option == "--block" and name:
+            blocked.add(name)
+        elif option == "--unblock" and name:
+            if not blocked.remove(name):
+                print(f'"{name}" was not on the list.')
+        elif option != "--blocked":
+            print(f'Give the app name, for example:  python -m oyan {option} "App Name"')
+            return
+        print("Oyan will not take a screenshot while any of these is on screen:")
+        for item in blocked.get_list():
+            print(f"  - {item}")
         return
     if option == "--log":
         path = sent_log.open_page()

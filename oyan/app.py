@@ -7,6 +7,7 @@ Each part lives in its own file and knows nothing about the others:
 * doodles.py  - the idle sketches
 * region.py   - dragging a box to send only part of the screen
 * sent_log.py - the record of everything sent to the AI
+* blocked.py  - apps Oyan refuses to photograph
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -19,7 +20,7 @@ question entered -> take a screenshot -> ask the AI model -> show the answer.
 from PyQt6.QtCore import QPoint, QRectF, QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
 
-from oyan import capture, hotkey, marks
+from oyan import blocked, capture, hotkey, marks
 from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
@@ -117,7 +118,17 @@ class Oyan:
         self.overlay.wipe_board()
 
     def _ready_to_capture(self):
-        """Check the Screen Recording permission; explain if it is missing."""
+        """May we take a picture now? Explains why not, if not."""
+        # Never photograph a blocked app (a password manager, for example).
+        blocked_app = blocked.blocked_app_on_screen()
+        if blocked_app is not None:
+            self.overlay.show_answer(
+                f"I am not looking while {blocked_app} is on screen. "
+                "Close or hide it and ask again. Nothing was captured or sent.",
+                None,
+            )
+            return False
+
         if capture.has_permission():
             return True
         capture.request_permission()

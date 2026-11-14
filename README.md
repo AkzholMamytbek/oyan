@@ -5,7 +5,7 @@ You ask a question about what is on your screen; Oyan looks at a screenshot,
 glides to the relevant spot, and writes the answer right there in a
 handwriting style.
 
-> **Status: version 1 is done; version 2 is in progress.** See
+> **Status: versions 1 and 2 are done; version 3 is in progress.** See
 > [Updates](#updates) for what works so far.
 
 ## What makes Oyan different
@@ -129,6 +129,20 @@ python -m oyan --clear-log    # delete the whole record
 
 The record lives in `~/.oyan/sent`, readable only by your Mac user account,
 and keeps the newest 200 requests.
+
+**11. Blocked apps.** Oyan refuses to take a screenshot while a password
+manager (1Password, Bitwarden, Keychain Access, Passwords and others) has a
+window on screen. No picture is taken and nothing is sent; Oyan writes why.
+The list is yours to edit:
+
+```bash
+python -m oyan --blocked              # show the list
+python -m oyan --block "App Name"     # add an app
+python -m oyan --unblock "App Name"   # remove one
+```
+
+A bank's website inside a browser cannot be recognised this way; use
+Shift+Enter to send only part of the screen instead.
 
 ## Credits
 
