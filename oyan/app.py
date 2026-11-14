@@ -3,6 +3,7 @@
 Each part lives in its own file and knows nothing about the others:
 * overlay.py  - the see-through window and the buddy dot
 * handwriting.py - the written answer
+* mathwriting.py - fractions, powers and roots inside an answer
 * marks.py    - circles, underlines and arrows
 * doodles.py  - the idle sketches
 * region.py   - dragging a box to send only part of the screen

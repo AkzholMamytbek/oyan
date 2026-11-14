@@ -232,6 +232,13 @@ you ask something. Voice uses a larger speech model that is told you speak
 English, which makes it far better with accents, and the screenshot is taken
 while your words are still being recognised, so the answer starts sooner.
 
+**25. Handwriting for maths, code and languages.** Answers are no longer
+plain sentences only. Maths is written the way you would on paper: real
+fractions with a bar, small raised powers, lowered indices, root signs.
+Worked solutions go one step per line. Code is written in blue with its
+indentation kept, and other languages (French, for example) keep their
+accents.
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT
