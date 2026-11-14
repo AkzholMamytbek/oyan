@@ -150,6 +150,7 @@ class AskAI(QObject):
         self.direct_request = 0      # goes up by one for every API-key request
         self.direct_waiting = False
         self._direct_finished.connect(self._on_direct_finished)
+        self.last_picture_name = None   # file name of the last picture in the sent log
         self.timeout = QTimer()
         self.timeout.setSingleShot(True)
         self.timeout.timeout.connect(self._on_timeout)
@@ -188,7 +189,7 @@ class AskAI(QObject):
         # Privacy rule: write down what is about to leave the Mac BEFORE
         # sending it. If the note cannot be written, nothing is sent.
         try:
-            sent_log.record(
+            self.last_picture_name = sent_log.record(
                 text, image_bytes, screenshot.width, screenshot.height,
                 sent_via="Anthropic API key" if api_key else "claude command",
                 model=API_MODEL if api_key else AI_MODEL,

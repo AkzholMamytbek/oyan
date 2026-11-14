@@ -151,6 +151,15 @@ taken. Press Option+Enter there to look at the screen afresh instead, or
 Shift+Enter to pick an area. Wiping the board with Esc also forgets the
 picture and the conversation.
 
+**13. History.** Every question and its answer is kept in a plain file on
+your Mac, so you can find something again:
+
+```bash
+python -m oyan --history             # open a page with a search box
+python -m oyan --history save file   # print the entries containing those words
+python -m oyan --clear-history       # delete the history
+```
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT

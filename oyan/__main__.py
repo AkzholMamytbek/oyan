@@ -3,6 +3,9 @@
 Extra commands:
     python -m oyan --log          show everything Oyan has sent to the AI
     python -m oyan --clear-log    delete that record
+    python -m oyan --history      open past questions and answers, with search
+    python -m oyan --history WORDS   print the entries containing those words
+    python -m oyan --clear-history   delete the history
     python -m oyan --blocked      list the apps Oyan refuses to photograph
     python -m oyan --block NAME   add an app to that list
     python -m oyan --unblock NAME remove an app from it
@@ -17,7 +20,7 @@ import sys
 from AppKit import NSApp, NSApplicationActivationPolicyAccessory
 from PyQt6.QtWidgets import QApplication
 
-from oyan import blocked, sent_log, settings
+from oyan import blocked, history, sent_log, settings
 from oyan.app import Oyan
 
 
@@ -53,6 +56,20 @@ def main():
         print("Oyan will not take a screenshot while any of these is on screen:")
         for item in blocked.get_list():
             print(f"  - {item}")
+        return
+    if option == "--history":
+        words = sys.argv[2:]
+        if not words:
+            path = history.open_page()
+            print(f"Opened {path} in your browser ({len(history.read_entries())} question(s)).")
+            return
+        found = history.search(words)
+        print(f"{len(found)} match(es) for: {' '.join(words)}")
+        for entry in found:
+            print(f"\n{entry['time']}\n  Q: {entry['question']}\n  A: {entry['answer']}")
+        return
+    if option == "--clear-history":
+        print(f"Deleted the history ({history.clear()} question(s)).")
         return
     if option == "--log":
         path = sent_log.open_page()

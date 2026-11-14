@@ -33,7 +33,9 @@ MAX_ENTRIES = 200
 
 
 def record(text, image_bytes, width, height, sent_via, model, system_prompt):
-    """Write down one request. Called just before it is sent."""
+    """Write down one request. Called just before it is sent.
+
+    Returns the file name of the saved picture."""
     LOG_FOLDER.mkdir(parents=True, exist_ok=True)
     LOG_FOLDER.chmod(0o700)   # 700 = only your Mac user account may open it
 
@@ -57,6 +59,7 @@ def record(text, image_bytes, width, height, sent_via, model, system_prompt):
     LOG_FILE.chmod(0o600)
 
     _forget_oldest()
+    return picture_name
 
 
 def read_entries():

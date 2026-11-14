@@ -8,6 +8,7 @@ Each part lives in its own file and knows nothing about the others:
 * region.py   - dragging a box to send only part of the screen
 * sent_log.py - the record of everything sent to the AI
 * blocked.py  - apps Oyan refuses to photograph
+* history.py  - past questions and answers, searchable
 * hotkey.py   - the global key combination
 * ask_box.py  - the small text box
 * capture.py  - the screenshot
@@ -20,7 +21,7 @@ question entered -> take a screenshot -> ask the AI model -> show the answer.
 from PyQt6.QtCore import QPoint, QRectF, QTimer
 from PyQt6.QtGui import QCursor, QGuiApplication
 
-from oyan import blocked, capture, hotkey, marks
+from oyan import blocked, capture, history, hotkey, marks
 from oyan.ai import AskAI
 from oyan.ask_box import BOX_HEIGHT, AskBox, app_in_front, bring_to_front
 from oyan.overlay import OverlayController
@@ -79,6 +80,7 @@ class Oyan:
                 "  3. Quit Oyan with Ctrl+C and start it again."
             )
         print("To see everything Oyan has sent:  python -m oyan --log")
+        print("To search past questions:         python -m oyan --history")
         print("Press Ctrl+C here to quit.")
 
     def _place_under(self, note):
@@ -247,6 +249,13 @@ class Oyan:
                 drawn.append(marks.arrow(first, second))
 
         self.overlay.show_answer(answer.text, spot, drawn)
+        try:
+            history.record(
+                self.question, answer.text, self.ai.last_picture_name,
+                follow_up=len(self.exchanges) > 0,
+            )
+        except OSError as error:
+            print(f"Could not write the history: {error}")
         self.exchanges.append((self.question, answer.text))   # remember for follow-ups
 
     def on_ai_failed(self, message):
