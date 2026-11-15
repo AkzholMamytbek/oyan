@@ -11,14 +11,16 @@ only exists for the few seconds you are dragging.
 
 import objc
 from AppKit import NSApp
-from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen
+from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
+from oyan import style
 from oyan.overlay import show_on_every_desktop
 
-DIM = QColor(0, 0, 0, 70)             # how dark the rest of the screen gets
-BORDER = QColor(255, 153, 51)         # orange, like the buddy
+DIM = QColor(0, 0, 0, 80)             # how dark the rest of the screen gets
+BORDER = QColor(255, 255, 255)        # a thin white frame, like the Mac's own screenshot tool
+BORDER_SHADE = QColor(0, 0, 0, 90)    # a dark line just outside it, so it shows on white too
 SMALLEST_SIDE = 12                    # drags smaller than this count as a mistake
 HELP_TEXT = "Drag over the part to send     Esc: cancel"
 
@@ -111,16 +113,15 @@ class RegionSelector(QWidget):
             painter.fillRect(QRect(full.left(), chosen.bottom() + 1, full.width(), full.bottom() - chosen.bottom()), DIM)
             painter.fillRect(QRect(full.left(), chosen.top(), chosen.left() - full.left(), chosen.height()), DIM)
             painter.fillRect(QRect(chosen.right() + 1, chosen.top(), full.right() - chosen.right(), chosen.height()), DIM)
-            painter.setPen(QPen(BORDER, 2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(chosen)
+            frame = QRectF(chosen)
+            painter.setPen(QPen(BORDER_SHADE, 1))
+            painter.drawRect(frame.adjusted(-1.5, -1.5, 1.5, 1.5))
+            painter.setPen(QPen(BORDER, 1))
+            painter.drawRect(frame.adjusted(-0.5, -0.5, 0.5, 0.5))
+            # The size of the selection, under its bottom-right corner.
+            size = f"{chosen.width()} × {chosen.height()}"
+            style.paint_pill(painter, QPointF(chosen.right() - style.pill_width(size), chosen.bottom() + 8), size)
 
         # A line of help near the top of the screen.
-        painter.setFont(QFont(".AppleSystemUIFont", 13))
-        width = painter.fontMetrics().horizontalAdvance(HELP_TEXT) + 28
-        pill = QRect((self.width() - width) // 2, 48, width, 30)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(40, 30, 20, 215))
-        painter.drawRoundedRect(pill, 15, 15)
-        painter.setPen(QColor(255, 250, 235))
-        painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, HELP_TEXT)
+        style.paint_pill(painter, QPointF((self.width() - style.pill_width(HELP_TEXT)) / 2, 52), HELP_TEXT)

@@ -238,6 +238,15 @@ Worked solutions go one step per line. Code is written in blue with its
 indentation kept, and other languages (French, for example) keep their
 accents.
 
+**26. A new look, following Apple's design.** Answers are now written on
+cards of real frosted glass, the same blurred material as Spotlight and the
+menu bar, with a soft shadow and a hairline edge instead of a paper note.
+The ask box is a glass bar with Oyan's triangle in it. Everything follows
+the Mac's light and dark mode, uses Apple's system colours and font, and
+moves gently: cards spring in and fade out. The handwriting stays. The
+look lives in two new files, `oyan/style.py` (colours, fonts, shadows,
+motion) and `oyan/glass.py` (the glass itself).
+
 ## Credits
 
 Oyan is inspired by [Clicky](https://github.com/farzaa/clicky) by Farza (MIT

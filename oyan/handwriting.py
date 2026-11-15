@@ -5,6 +5,10 @@ A Note knows three things:
 * how much of the text has been "written" so far (`progress`, in letters);
 * how to draw itself at that point in time (`paint`).
 
+A note is a card of frosted glass with the answer handwritten on it. The
+glass is drawn by macOS (see glass.py); this file draws the writing, and the
+shadow and thin edge round the card (see style.py).
+
 Notes stay on the screen like writing on a school board until they are wiped.
 Rubbing the cursor quickly over a note erases a strip where the cursor went,
 like a cloth; the strips are remembered in `erased` (the overlay does the
@@ -28,8 +32,9 @@ import math
 import re
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QPen
+from PyQt6.QtGui import QFont, QFontMetricsF
 
+from oyan import style
 from oyan.mathwriting import Glyphs, math_box
 
 # --- Things you can tweak -------------------------------------------------
@@ -37,14 +42,13 @@ from oyan.mathwriting import Glyphs, math_box
 FONT_NAME = "Bradley Hand"   # others on a Mac: "Noteworthy", "Marker Felt"
 FONT_SIZE = 20
 MAX_TEXT_WIDTH = 360         # wrap lines longer than this, in points
-PADDING = 14                 # space between the text and the paper edge
+PADDING = 18                 # space between the text and the edge of the card
 GAP = 40                     # distance between the pointed-at spot and the note
 SCREEN_MARGIN = 10           # keep the note this far from the screen edges
 
 # A small reminder shown under the note once it is written.
 HINT_TEXT = "Type below to ask more    Scrub to erase    Esc: wipe all"
-HINT_SIZE = 11
-HINT_HEIGHT = 24             # room kept free under the note for the reminder
+HINT_HEIGHT = 30             # room kept free under the note for the reminder
 SPACE_FOR_ASK_BOX = 56       # room kept free under that for the typing box
 GAP_BETWEEN_NOTES = 14       # when a new note has to move out of an old one's way
 WIPE_STROKES = 3             # how many times the eraser goes up and down per note
@@ -55,9 +59,9 @@ WIPE_STROKES = 3             # how many times the eraser goes up and down per no
 COVERING_COST = 10.0
 DISTANCE_COST = 0.001
 
-PAPER = QColor(255, 250, 235, 240)   # warm paper, very slightly see-through
-INK = QColor(60, 40, 20)             # dark brown, like pencil
-CODE_INK = QColor(30, 70, 150)       # blue ink for code, so it stands out from the words
+CODE_INK = style.code_ink            # blue ink for code (a function: the shade follows light/dark mode)
+SHADOW_MARGIN = 34                   # how far the card's shadow reaches beyond it
+ARRIVE_FROM = 0.94                   # a card starts at this share of its size and springs to full size
 CODE_SIZE = 18                       # code is written slightly smaller
 ROW_GAP = 5                          # extra space between rows
 
@@ -107,6 +111,11 @@ class Note:
         self.anchor = QPointF(anchor)
         self.has_point = has_point
         self.visible = False    # the overlay switches this on when the buddy arrives
+        self.appear = 1.0       # 0 -> 1 while the card arrives (fades in and springs to size)
+        self.leave = 0.0        # 0 -> 1 while the card fades away after being removed
+        self.shown_at = 0.0     # when it became visible
+        self.leaving_since = None   # when it started to fade away, if it has
+        self.glass = None       # the frosted-glass panel behind the writing (see glass.py)
         self.progress = 0.0     # how many letters have been written so far
         self.wipe = 0.0         # 0 = untouched, 1 = completely wiped away
         self.erased = []        # strips rubbed out with the cursor: [(from point, to point), ...]
@@ -283,8 +292,28 @@ class Note:
         return min(free, key=score)
 
     def bounds(self):
-        """A rectangle containing everything the note draws (for repainting)."""
-        return self.box.united(QRectF(self.anchor, self.anchor)).adjusted(-12, -12, 12, 12 + HINT_HEIGHT)
+        """The room the note takes up on the board: the card and its reminder."""
+        return self.box.adjusted(-12, -12, 12, 12 + HINT_HEIGHT)
+
+    def paint_bounds(self):
+        """Everything the note draws, shadow included (for repainting)."""
+        return self.bounds().adjusted(-SHADOW_MARGIN, -SHADOW_MARGIN, SHADOW_MARGIN, SHADOW_MARGIN)
+
+    # --- Arriving and leaving ------------------------------------------------
+
+    def card_rect(self):
+        """Where the glass card is right now. While arriving it grows from
+        slightly small to full size, with a little spring."""
+        scale = ARRIVE_FROM + (1 - ARRIVE_FROM) * style.spring(self.appear)
+        shrink_x = self.box.width() * (1 - scale) / 2
+        shrink_y = self.box.height() * (1 - scale) / 2
+        return self.box.adjusted(shrink_x, shrink_y, -shrink_x, -shrink_y)
+
+    def card_opacity(self):
+        """How solid the card is: it fades in on arrival, out when removed,
+        and out as the eraser wipes across it."""
+        wiped = style.smooth(min(self.wipe, 1.0))
+        return style.smooth(self.appear * 2) * (1 - self.leave) * (1 - wiped)
 
     # --- Writing -----------------------------------------------------------
 
@@ -311,8 +340,6 @@ class Note:
             letters_before += letters
             top += row.height
 
-    # --- Drawing -----------------------------------------------------------
-
     # --- Wiping ------------------------------------------------------------
 
     def _wipe_front(self):
@@ -326,29 +353,26 @@ class Note:
         swing = math.sin(self.wipe * math.pi * 2 * WIPE_STROKES)   # -1 .. 1
         return QPointF(self._wipe_front(), box.center().y() + swing * box.height() / 2)
 
-    def _begin(self, painter):
-        """Settings shared by both drawing steps: paleness and the wipe."""
+    # --- Drawing -----------------------------------------------------------
+
+    def paint(self, painter):
+        """Draw the card's shadow and edge, the writing and the reminder.
+        (The glass of the card itself is drawn by macOS, underneath.)"""
+        if not self.visible or self.wipe >= 1 or self.leave >= 1:
+            return
+        style.paint_card_frame(painter, self.card_rect(), style.CARD_RADIUS, self.card_opacity())
+
         painter.save()
+        painter.setOpacity(1 - self.leave)
         if self.wipe > 0:
-            # Only draw what the eraser has not reached yet.
+            # Only draw the writing the eraser has not reached yet.
             area = self.bounds()
             area.setLeft(self._wipe_front())
             painter.setClipRect(area, Qt.ClipOperation.IntersectClip)
 
-    def paint(self, painter):
-        """Draw the paper, the text and the reminder."""
-        if not self.visible or self.wipe >= 1:
-            return
-        self._begin(painter)
-
-        # The paper.
-        painter.setPen(QPen(INK, 1.5))
-        painter.setBrush(PAPER)
-        painter.drawRoundedRect(self.box, 10, 10)
-
         # The writing, each row revealed only as far as it has been written.
         painter.setFont(self.font)
-        painter.setPen(INK)
+        painter.setPen(style.ink())
         letters_before = 0.0
         top = self.box.top() + PADDING
         left = self.box.left() + PADDING
@@ -367,13 +391,6 @@ class Note:
 
         # Once everything is written, a small reminder of what you can do next.
         if self.finished() and self.show_hint:
-            painter.setFont(QFont(".AppleSystemUIFont", HINT_SIZE))
-            hint_width = painter.fontMetrics().horizontalAdvance(self.hint_text) + 16
-            hint = QRectF(self.box.left(), self.box.bottom() + 5, hint_width, HINT_HEIGHT - 6)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(40, 30, 20, 190))        # dark, slightly see-through
-            painter.drawRoundedRect(hint, 9, 9)
-            painter.setPen(QColor(255, 250, 235))
-            painter.drawText(hint, Qt.AlignmentFlag.AlignCenter, self.hint_text)
+            style.paint_pill(painter, QPointF(self.box.left(), self.box.bottom() + 8), self.hint_text)
 
         painter.restore()

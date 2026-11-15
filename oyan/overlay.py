@@ -28,6 +28,11 @@ Answers stay on screen like writing on a school board (`self.notes`), up to
 MAX_NOTES of them; a new one is placed where it covers nothing. Esc wipes the
 whole board; rubbing the cursor quickly over one answer erases just that one.
 
+Each answer is a card of frosted glass. The glass is a panel that macOS draws
+underneath our own drawing (see glass.py); `_animate_cards` keeps every panel
+in step with its note: it fades and springs in when the answer arrives, gets
+holes where you rub, and fades out when the answer is removed.
+
 Coordinates
 -----------
 Qt gives positions in "points", not real pixels. On a Retina screen one point
@@ -54,7 +59,9 @@ from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPolygonF, QRegion
 from PyQt6.QtWidgets import QWidget
 
+from oyan import style
 from oyan.doodles import make_doodle
+from oyan.glass import Glass
 from oyan.handwriting import Note
 
 # --- Things you can tweak -------------------------------------------------
@@ -97,13 +104,8 @@ BUDDY_COLORS = {
     "green": QColor(19, 128, 52),       # royal green
 }
 DEFAULT_COLOR = "burgundy"
-LISTENING_COLOR = QColor(255, 70, 70)  # bright red while the microphone is on
 # The shadow under the triangle: (how far it is shifted, how dark), outermost first.
 SHADOW_LAYERS = [(4.0, 22), (3.0, 34), (2.0, 46), (1.0, 58)]
-
-# The triangle's corners, measured from its middle, in points: the tip is at
-# the top left, like a mouse arrow.
-BUDDY_SHAPE = [(-8, -9), (10, -1), (-2, 10)]
 
 
 def show_on_every_desktop(widget, takes_keyboard=False):
@@ -135,6 +137,10 @@ def show_on_every_desktop(widget, takes_keyboard=False):
     # are then never in the picture that is sent, without having to hide
     # them (hiding made the board flicker every time you asked something).
     window.setSharingType_(NSWindowSharingNone)
+    # macOS adds a shadow round whatever a window shows. On a see-through
+    # window that turns into a faint outline round every card, so we switch
+    # it off and draw our own soft shadows (see style.py).
+    window.setHasShadow_(False)
 
 
 class ScreenOverlay(QWidget):
@@ -189,10 +195,12 @@ class ScreenOverlay(QWidget):
         if controller.notes_visible:
             # Two layers: first the circles and arrows, then the papers with
             # their text on top.
-            for note in controller.notes:
+            # (`leaving` holds answers that are fading away.)
+            on_board = controller.leaving + controller.notes
+            for note in on_board:
                 for mark in note.marks:
                     mark.paint(painter)
-            for note in controller.notes:
+            for note in on_board:
                 note.paint(painter)
 
             # Rub out the strips the cursor has erased. "Clear" is a special
@@ -203,7 +211,7 @@ class ScreenOverlay(QWidget):
                 if not note.erased:
                     continue
                 painter.save()
-                allowed = QRegion(note.bounds().toAlignedRect())
+                allowed = QRegion(note.paint_bounds().toAlignedRect())
                 for mark in note.marks:
                     allowed += QRegion(mark.bounds().toAlignedRect())
                 painter.setClipRegion(allowed, Qt.ClipOperation.IntersectClip)
@@ -217,13 +225,10 @@ class ScreenOverlay(QWidget):
         if not controller.buddy_visible:
             return   # hidden while a screenshot is being taken
 
-        # Oyan is a small triangle, shaped like the tip of a mouse arrow.
-        # BUDDY_SHAPE lists its three corners around the middle (0, 0); here
-        # they are scaled (the pulse) and moved to where the buddy is.
-        pos = controller.buddy_pos
-        scale = controller.pulse()
-        triangle = QPolygonF([pos + QPointF(x, y) * scale for x, y in BUDDY_SHAPE])
-        color = LISTENING_COLOR if controller.listening else BUDDY_COLORS[controller.color_name]
+        # Oyan is a small triangle, shaped like the tip of a mouse arrow
+        # (its corners are in style.py). It is red while the microphone is on.
+        triangle = QPolygonF(style.triangle_points(controller.buddy_pos, controller.pulse()))
+        color = style.system_colour("red") if controller.listening else BUDDY_COLORS[controller.color_name]
         painter.setPen(Qt.PenStyle.NoPen)
         # A soft shadow instead of an outline: the same triangle drawn a few
         # times, see-through, each a little further down and to the right.
@@ -250,6 +255,7 @@ class OverlayController:
 
         self.mode = "follow"
         self.notes = []           # every answer on the board, oldest first
+        self.leaving = []         # answers that were removed and are still fading away
         self.notes_visible = True # False for a moment while a screenshot is taken
         self.writing = None       # the note being written right now, if any
         self.to_draw = []         # marks still waiting to be drawn
@@ -279,6 +285,9 @@ class OverlayController:
         # If a monitor is plugged in or removed, rebuild the windows.
         app.screenAdded.connect(self.rebuild_overlays)
         app.screenRemoved.connect(self.rebuild_overlays)
+        # If the Mac switches between light and dark mode, redraw everything
+        # in the new colours.
+        app.styleHints().colorSchemeChanged.connect(self._redraw_everything)
 
     def start(self):
         self.rebuild_overlays()
@@ -299,8 +308,14 @@ class OverlayController:
             window.orderFrontRegardless()
             overlay.repaint()
 
+    def _redraw_everything(self, *_):
+        for overlay in self.overlays:
+            overlay.update()
+
     def rebuild_overlays(self, *_):
         """Create one overlay window per monitor (throwing away old ones)."""
+        for note in self.leaving + self.notes:
+            self._drop_glass(note)   # the glass lived in the old window; it is made again
         for overlay in self.overlays:
             overlay.close()
         self.overlays = []
@@ -359,7 +374,7 @@ class OverlayController:
         for old in self.notes:
             old.wipe = 0.0
             old.show_hint = False
-            self._repaint(old.bounds())
+            self._repaint(old.paint_bounds())
             for mark in old.marks:
                 mark.progress = 1.0
                 mark.fade = 1.0
@@ -402,14 +417,62 @@ class OverlayController:
             overlay.update()
 
     def remove_note(self, note):
-        """Take one answer (and its marks) off the board at once."""
+        """Take one answer (and its marks) off the board. It no longer counts
+        as being there, but it takes a moment to fade away."""
         if note in self.notes:
-            self._repaint(note.bounds())
-            for mark in note.marks:
-                self._repaint(mark.bounds())
             self.notes.remove(note)
+            note.show_hint = False
+            note.leaving_since = time.monotonic()
+            self.leaving.append(note)
             if self.on_note_removed is not None:
                 self.on_note_removed(note)
+
+    # --- The glass cards -----------------------------------------------------
+
+    def _overlay_at(self, point):
+        """The overlay window that covers this spot of the desktop."""
+        for overlay in self.overlays:
+            if overlay.geometry().contains(point.toPoint()):
+                return overlay
+        return self.overlays[0]
+
+    def _drop_glass(self, note):
+        if note.glass is not None:
+            note.glass.remove()
+            note.glass = None
+
+    def _animate_cards(self, now):
+        """Called on every tick: move each card's arriving and leaving
+        animation on a step, and keep its glass panel in step with it."""
+        for note in self.leaving + self.notes:
+            if not note.visible:
+                continue   # the buddy has not reached it yet
+            moving = note.appear < 1 or note.leaving_since is not None
+            note.appear = min((now - note.shown_at) / style.APPEAR_SECONDS, 1.0)
+            if note.leaving_since is not None:
+                note.leave = min((now - note.leaving_since) / style.LEAVE_SECONDS, 1.0)
+                for mark in note.marks:      # its circles and arrows fade with it
+                    mark.fade = min(mark.fade, 1 - note.leave)
+                    self._repaint(mark.bounds())
+            if moving:
+                self._repaint(note.paint_bounds())
+
+            # The glass: same place, same fade, same rubbed-out strips.
+            if note.glass is None:
+                note.glass_window = self._overlay_at(note.box.center())
+                note.glass = Glass(note.glass_window, style.CARD_RADIUS)
+            corner = QPointF(note.glass_window.geometry().topLeft())
+            note.glass.place(
+                note.card_rect().translated(-corner),
+                note.card_opacity() if self.notes_visible else 0.0,
+                holes=[(start - corner, end - corner) for start, end in note.erased],
+                hole_width=ERASER_WIDTH,
+            )
+
+        # Forget the answers that have faded away completely.
+        for note in [note for note in self.leaving if note.leave >= 1]:
+            self._drop_glass(note)
+            self.leaving.remove(note)
 
     def _rub_step(self, seconds_passed):
         """Erase with the cursor, like a cloth on a board.
@@ -477,11 +540,13 @@ class OverlayController:
 
     def dismiss(self):
         """Remove every answer at once, with no animation."""
-        for old in self.notes:
-            self._repaint(old.bounds())
+        for old in self.leaving + self.notes:
+            self._drop_glass(old)
+            self._repaint(old.paint_bounds())
             for mark in old.marks:
                 self._repaint(mark.bounds())
         self.notes = []
+        self.leaving = []
         self.writing = None
         self.to_draw = []
         self.mode = "follow"
@@ -508,9 +573,10 @@ class OverlayController:
         self.mode = "wipe"
 
     def _arrived_at_spot(self):
-        """The buddy is on the spot: show the paper, rest a moment."""
+        """The buddy is on the spot: the card starts to arrive; rest a moment."""
         self.writing.visible = True
-        self._repaint(self.writing.bounds())
+        self.writing.appear = 0.0
+        self.writing.shown_at = time.monotonic()
         self.mode = "pause"
         self.pause_until = time.monotonic() + POINT_PAUSE_SECONDS
 
@@ -628,6 +694,7 @@ class OverlayController:
         old_pos = QPointF(self.buddy_pos)
 
         self._idle_step(now)
+        self._animate_cards(now)
         if self.notes and self.notes_visible and self.mode != "wipe":
             self._rub_step(seconds_passed)
         else:
@@ -663,7 +730,7 @@ class OverlayController:
             note = self.writing
             note.progress += WRITE_SPEED * seconds_passed
             self.buddy_pos = note.pen_position()
-            self._repaint(note.bounds())
+            self._repaint(note.paint_bounds())
             if note.finished():
                 self.writing = None
                 if self.on_note_finished is not None:
@@ -690,8 +757,9 @@ class OverlayController:
                 mark.fade = max(1 - note.wipe, 0.0)   # its marks fade out with it
                 self._repaint(mark.bounds())
             self.buddy_pos = note.eraser_position()
-            self._repaint(note.bounds())
+            self._repaint(note.paint_bounds())
             if note.wipe >= 1:
+                self._drop_glass(note)
                 self.notes.pop(0)    # this one is gone
                 self._wipe_next()    # on to the next, if any
 

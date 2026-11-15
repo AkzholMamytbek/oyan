@@ -128,14 +128,24 @@ def build_page():
 <meta charset="utf-8">
 <title>Oyan: what left my Mac</title>
 <style>
-  body {{ font: 15px -apple-system, sans-serif; background: #fffaeb; color: #3c2814;
-         max-width: 900px; margin: 40px auto; padding: 0 20px; }}
-  h1 {{ font-size: 24px; }}
-  article {{ display: flex; gap: 20px; padding: 18px 0; border-top: 1px solid #d9cdb4; }}
-  img {{ width: 300px; border: 1px solid #3c2814; border-radius: 8px; display: block; }}
-  time {{ font-weight: 600; }}
-  .text {{ white-space: pre-wrap; }}
-  .meta, summary {{ color: #7a6a55; font-size: 13px; }}
+  :root {{ color-scheme: light dark; --text: #1d1d1f; --quiet: #6e6e73; --back: #f5f5f7;
+           --card: #ffffff; --line: rgba(0, 0, 0, 0.08); --accent: #0071e3; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --text: #f5f5f7; --quiet: #a1a1a6; --back: #000000;
+             --card: #1c1c1e; --line: rgba(255, 255, 255, 0.12); --accent: #2997ff; }}
+  }}
+  body {{ font: 15px/1.5 -apple-system, "SF Pro Text", sans-serif; background: var(--back); color: var(--text);
+         max-width: 860px; margin: 56px auto; padding: 0 20px; -webkit-font-smoothing: antialiased; }}
+  h1 {{ font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }}
+  p {{ color: var(--quiet); }}
+  article {{ display: flex; gap: 20px; padding: 18px; margin: 14px 0; background: var(--card);
+            border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06); }}
+  img {{ border: 1px solid var(--line); border-radius: 10px; display: block; }}
+  code {{ font: 13px ui-monospace, "SF Mono", monospace; }}
+  img {{ width: 300px; }}
+  time {{ font-weight: 600; color: var(--text); }}
+  .text {{ white-space: pre-wrap; color: var(--text); }}
+  .meta, summary {{ color: var(--quiet); font-size: 13px; }}
 </style>
 </head>
 <body>

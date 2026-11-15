@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import QWidget
 
 from oyan.overlay import show_on_every_desktop
 
-PEN_COLOR = QColor(30, 144, 255)   # bright blue: easy to tell apart from Oyan's red marker
+PEN_COLOR = QColor(10, 132, 255)   # Apple's system blue: easy to tell apart from Oyan's red marker
 PEN_WIDTH = 3.5
 SMALLEST_STROKE = 6                # shorter than this (in points) is a slip, not a stroke
 

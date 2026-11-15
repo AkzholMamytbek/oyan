@@ -69,7 +69,8 @@ class Glyphs:
     def __init__(self, text, size, color=None):
         self.text = text
         self.size = size
-        self.color = color          # None means "whatever ink the note uses"
+        self.color = color          # None means "whatever ink the note uses"; otherwise a
+                                    # function that gives the colour (see style.py)
         self.font = font_of(size)
         metrics = QFontMetricsF(self.font)
         self.width = metrics.horizontalAdvance(text)
@@ -81,7 +82,7 @@ class Glyphs:
         painter.save()
         painter.setFont(self.font)
         if self.color is not None:
-            painter.setPen(self.color)
+            painter.setPen(self.color())
         painter.drawText(QPointF(x, baseline), self.text)
         painter.restore()
 

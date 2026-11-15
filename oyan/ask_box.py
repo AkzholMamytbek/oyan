@@ -7,6 +7,9 @@ It appears in two ways:
   keyboard until you click in it (or press the hotkey), and it stays there
   until the board is wiped.
 
+It looks like Spotlight: a bar of frosted glass (see glass.py) with Oyan's
+triangle at the left, and it fades in when it opens.
+
 The tricky part is keyboard focus. To type into the box, Oyan has to become
 the "active" app for a moment. Before it does, we remember which app was in
 front, and when the box closes we put that app back in front. That way you
@@ -15,21 +18,24 @@ carry on exactly where you were.
 
 import objc
 from AppKit import NSApp, NSApplicationActivateIgnoringOtherApps, NSWorkspace
-from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen
-from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QWidget
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPolygonF
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QWidget
 
+from oyan import style
+from oyan.glass import Glass
 from oyan.overlay import show_on_every_desktop
 
-BOX_WIDTH = 400
-BOX_HEIGHT = 44
-OFFSET_FROM_CURSOR = QPoint(18, 34)   # below the cursor and the buddy dot
+BOX_WIDTH = 440
+BOX_HEIGHT = 48
+OFFSET_FROM_CURSOR = QPoint(18, 34)   # below the cursor and the buddy
+ICON_ROOM = 46                        # space at the left for Oyan's triangle
+FADE_IN_MS = 160                      # how long the box takes to fade in
+TEXT_SIZE = 16
 
-PLACEHOLDER_NEW = "Ask about your screen…   (Shift+Enter: pick an area)"   # /green and /burgundy change Oyan's colour
-PLACEHOLDER_FOLLOW_UP = "Ask more…   (Shift+Enter: pick an area)"
-
-PAPER = QColor(255, 250, 235)         # warm paper colour
-INK = QColor(60, 40, 20)              # dark brown, like pencil
+PLACEHOLDER_NEW = "Ask about your screen"   # /green and /burgundy change Oyan's colour
+PLACEHOLDER_FOLLOW_UP = "Ask more"
+SHORTCUT_HINT = "⇧⏎  pick area"            # shown faintly at the right of the box
 
 
 def app_in_front():
@@ -74,19 +80,75 @@ class AskBox(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedSize(BOX_WIDTH, BOX_HEIGHT)
 
+        self.accent = QColor(128, 0, 32)   # the colour of the triangle; the app sets it
+        self.glass = None                  # the frosted glass behind the box, made when first shown
+
         self.input = QLineEdit()
         self.input.setPlaceholderText(PLACEHOLDER_NEW)
         self.input.setFrame(False)
-        self.input.setStyleSheet(
-            f"background: transparent; color: {INK.name()}; font-size: 15px;"
-        )
+        self.input.setAttribute(Qt.WidgetAttribute.WA_MacShowFocusRect, False)   # no blue focus ring
+        self.input.setFont(style.ui_font(TEXT_SIZE))
         self.input.returnPressed.connect(self._submit)
         # Let us hear about mouse clicks on the text field (see eventFilter).
         self.input.installEventFilter(self)
 
+        # A faint reminder of the shortcut, at the right-hand end.
+        self.shortcut = QLabel(SHORTCUT_HINT)
+        self.shortcut.setFont(style.ui_font(12))
+        self.shortcut.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setContentsMargins(ICON_ROOM, 0, 16, 0)
         layout.addWidget(self.input)
+        layout.addWidget(self.shortcut)
+
+        # Fading in: Qt changes the window's opacity from 0 to 1 for us.
+        self.fade = QPropertyAnimation(self, b"windowOpacity")
+        self.fade.setDuration(FADE_IN_MS)
+        self.fade.setStartValue(0.0)
+        self.fade.setEndValue(1.0)
+
+        self._use_colours()
+        QGuiApplication.styleHints().colorSchemeChanged.connect(self._use_colours)
+
+    # --- The look ------------------------------------------------------------
+
+    def _use_colours(self, *_):
+        """Set the text colours for light or dark mode (see style.py)."""
+        def css(color):
+            return f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
+        self.input.setStyleSheet(
+            f"QLineEdit {{ background: transparent; border: none; color: {css(style.ink())};"
+            f" selection-background-color: {css(style.system_colour('blue'))}; }}"
+        )
+        # The placeholder ("Ask about your screen") is quieter than typed text.
+        palette = self.input.palette()
+        palette.setColor(palette.ColorRole.PlaceholderText, style.secondary_ink())
+        self.input.setPalette(palette)
+        self.shortcut.setStyleSheet(f"color: {css(style.secondary_ink())};")
+        self.update()
+
+    def set_accent(self, color):
+        """Use this colour for the triangle (the same as the buddy's)."""
+        self.accent = QColor(color)
+        self.update()
+
+    def _appear(self):
+        """Show the box: put the glass behind it and fade in."""
+        self.setWindowOpacity(0.0)
+        self.show()
+        if self.glass is None:
+            self.glass = Glass(self, style.ASK_BOX_RADIUS)
+            self.glass.place(QRectF(self.rect()))
+        self.fade.stop()
+        self.fade.start()
+
+    def _add_shadow(self):
+        """Let macOS draw its own window shadow round the box, the same one
+        every Mac window has. (For Oyan's other windows it is switched off.)"""
+        window = self._mac_window()
+        window.setHasShadow_(True)
+        window.invalidateShadow()   # "work the shadow out again for the current shape"
 
     # --- Opening and closing ----------------------------------------------
 
@@ -102,8 +164,9 @@ class AskBox(QWidget):
         self.input.clear()
         self.input.setPlaceholderText(PLACEHOLDER_FOLLOW_UP if self.attached else PLACEHOLDER_NEW)
         self.move(self._keep_on_screen(top_left))
-        self.show()
+        self._appear()
         show_on_every_desktop(self, takes_keyboard=True)   # also over full-screen apps
+        self._add_shadow()
         self._take_keyboard()
 
     def _take_keyboard(self):
@@ -133,8 +196,9 @@ class AskBox(QWidget):
         self.input.clear()
         self.input.setPlaceholderText(PLACEHOLDER_FOLLOW_UP)
         self.move(self._keep_on_screen(top_left))
-        self.show()
+        self._appear()
         show_on_every_desktop(self, takes_keyboard=True)
+        self._add_shadow()
         # (No raise_() here: on macOS that would pull Oyan in front of your
         # app and take the keyboard away from you.)
 
@@ -229,9 +293,19 @@ class AskBox(QWidget):
     # --- Drawing -----------------------------------------------------------
 
     def paintEvent(self, event):
-        """Draw the rounded paper-coloured background behind the text field."""
+        """Draw the thin edge of the box and Oyan's triangle at the left.
+        (The glass behind them is drawn by macOS, see glass.py.)"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(INK, 1.5))
-        painter.setBrush(PAPER)
-        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 12, 12)
+        painter.setPen(QPen(style.hairline(), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        edge = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.drawRoundedRect(edge, style.ASK_BOX_RADIUS, style.ASK_BOX_RADIUS)
+
+        # A dark colour such as burgundy would be hard to see on dark glass,
+        # so in dark mode the triangle is drawn in a lighter shade of it.
+        color = self.accent.lighter(170) if style.is_dark() else self.accent
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        middle = QPointF(ICON_ROOM / 2 + 2, self.height() / 2)
+        painter.drawPolygon(QPolygonF(style.triangle_points(middle, 0.9)))

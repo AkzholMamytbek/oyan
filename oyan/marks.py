@@ -22,17 +22,19 @@ import math
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QPainterPath, QPen
 
-MARKER = QColor(226, 68, 44)   # red-orange, like a board marker
+# Marker colours are Apple's system colours (the same ones as in style.py),
+# in their light-mode shades, which show well on any background.
+MARKER = QColor(255, 59, 48)   # system red
 MARKER_WIDTH = 3.2
 # The colours Oyan's pen can use for freehand strokes, by name.
 PEN_COLOURS = {
     "red": MARKER,
-    "blue": QColor(40, 110, 220),
-    "green": QColor(30, 150, 80),
-    "orange": QColor(240, 140, 30),
-    "purple": QColor(140, 70, 200),
-    "brown": QColor(130, 85, 45),
-    "black": QColor(40, 35, 30),
+    "blue": QColor(0, 122, 255),
+    "green": QColor(52, 199, 89),
+    "orange": QColor(255, 149, 0),
+    "purple": QColor(175, 82, 222),
+    "brown": QColor(162, 132, 94),
+    "black": QColor(29, 29, 31),
 }
 CIRCLE_PADDING = 8             # how far outside the thing the circle is drawn
 ARROW_HEAD = 14                # length of the arrow head's sides

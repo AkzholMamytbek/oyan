@@ -39,7 +39,7 @@ from oyan.sketch import DrawLayer
 from oyan.speak import Speaker
 
 
-NEXT_QUESTION_GAP = 30   # space between an answer and the box for the next question
+NEXT_QUESTION_GAP = 38   # space between an answer and the box for the next question
 CAPTURE_DELAY_MS = 60    # a short pause before the picture, so your app is back in front
 SHORTEST_HOLD = 0.3      # holding the keys for less than this (seconds) is a slip, not a question
 STEP_CLICK_RADIUS = 90   # a click this close to a step's spot counts as doing the step
@@ -59,6 +59,7 @@ class Oyan:
         self.overlay.may_doodle = lambda: not self.ask_box.isVisible() and not self.ai.is_busy()
 
         self.ask_box = AskBox()
+        self.ask_box.set_accent(BUDDY_COLORS[self.overlay.color_name])   # its triangle matches the buddy
         self.ask_box.submitted.connect(self.on_question)
         self.ask_box.submitted_for_area.connect(self.on_question_for_area)
         self.ask_box.submitted_fresh.connect(self.on_question)
@@ -326,6 +327,7 @@ class Oyan:
         name = words[0] if words else ""
         if name in BUDDY_COLORS:
             self.overlay.color_name = name
+            self.ask_box.set_accent(BUDDY_COLORS[name])
             all_settings = settings.load()
             all_settings["color"] = name
             settings.save(all_settings)
